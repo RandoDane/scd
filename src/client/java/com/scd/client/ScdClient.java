@@ -563,7 +563,7 @@ public class ScdClient implements ClientModInitializer {
 								.executes(ctx -> {
 									gizmoTest.toggle();
 									ctx.getSource().sendFeedback(Component.literal(gizmoTest.isActive()
-											? "Gizmo test ON - a red line (normal) and a green line (always-on-top) should extend 10 blocks from where you're looking. Walk behind a wall and see which one disappears."
+											? "Gizmo test ON - a red arrow (normal) and a green arrow (always-on-top), side by side, should point 10 blocks out from where you're looking, with START/TARGET labels. Walk behind a wall and see which arrow disappears."
 											: "Gizmo test OFF."));
 									return 1;
 								}))
