@@ -24,7 +24,11 @@ public final class ScdSlayerAreaAllowlist {
 	static {
 		AREAS.put(ScdSlayerType.ENDERMAN, List.of("The End", "Void Sepulture", "Dragon's Nest", "Zealot Bruiser Hideout"));
 		AREAS.put(ScdSlayerType.BLAZE, List.of("Crimson Isle", "Stronghold", "Smoldering Tomb"));
-		AREAS.put(ScdSlayerType.SPIDER, List.of("Spider's Den", "Burning Desert"));
+		// "Dragontail" confirmed live (2026-09-19): a Tarantula Broodfather V fight was running
+		// there and got its whole quest nulled out by this allowlist missing it, breaking every
+		// Spider feature (not just world-render) in that specific sub-area. Spider's Den almost
+		// certainly has other named sub-areas beyond these three that haven't turned up yet.
+		AREAS.put(ScdSlayerType.SPIDER, List.of("Spider's Den", "Burning Desert", "Dragontail"));
 	}
 
 	private ScdSlayerAreaAllowlist() {
