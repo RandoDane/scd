@@ -185,15 +185,18 @@ public class ScdClient implements ClientModInitializer {
 		scheduler.scheduleAtFixedRate(this::refreshMayorPerks, 0, 10, TimeUnit.MINUTES);
 		ClientCommandRegistrationCallback.EVENT.register(this::registerCommands);
 
-		// Throwaway proof-of-concept adder for the entity-glow mixin. Confirmed live: Hypixel NPCs
-		// are themselves an armor stand, and there's a SEPARATE, invisible "marker" armor stand
-		// stacked above just to host the floating name tag - glowing every armor stand lit up both.
-		// Excluding invisible/marker stands should leave only the NPC's own visible body glowing.
-		ScdGlowRegistry.register(entity -> {
-			if (!glowTestActive || !(entity instanceof net.minecraft.world.entity.decoration.ArmorStand stand)) return null;
-			if (stand.isInvisible() || stand.isMarker()) return null;
-			return 0xFFFF00FF;
-		});
+		// Throwaway proof-of-concept adder for the entity-glow mixin - glows whatever's under the
+		// crosshair bright magenta while /scd debug glowtest is toggled on. Confirmed live (color,
+		// through-walls) - see FEATURE_ROADMAP.md's "T2/T3 re-scoped" section. A follow-up attempt to
+		// instead glow "the NPC's body, not its name tag" via ArmorStand-only + isInvisible()/
+		// isMarker() filtering turned out to be the wrong approach entirely: /scd debug armorstands
+		// showed EVERY nearby armor stand is invisible=true, including the name/interact-prompt
+		// labels, with no distinct "body" stand at all - the NPC's actual visible model isn't an
+		// armor stand. Every real T2 feature targets one specific, already-identified entity (a
+		// found boss, a matched Livid, etc.), never a generic "is this a real NPC" guess, so this
+		// simpler crosshair version is both sufficient and correct - no classifier needed.
+		ScdGlowRegistry.register(entity -> glowTestActive && entity == Minecraft.getInstance().crosshairPickEntity
+				? 0xFFFF00FF : null);
 	}
 
 	/**
@@ -575,14 +578,12 @@ public class ScdClient implements ClientModInitializer {
 								.executes(ctx -> {
 									glowTestActive = !glowTestActive;
 									ctx.getSource().sendFeedback(Component.literal(glowTestActive
-											? "Glow test ON - NPC bodies nearby should glow bright magenta, but NOT their floating name tags, even through walls."
+											? "Glow test ON - whatever's under your crosshair should glow bright magenta, even through walls."
 											: "Glow test OFF."));
 									return 1;
 								}))
-						// Diagnostic for "which armor stand is which" - dumps every nearby armor
-						// stand's actual client-visible flags, since guessing which combination
-						// (isInvisible/isMarker/isSmall) separates an NPC's real body from its
-						// name-tag-holder stand turned out to be wrong on the first try.
+						// General-purpose dump of every nearby armor stand's real flags - see the
+						// method doc below for what this ruled out.
 						.then(ClientCommands.literal("armorstands")
 								.executes(ctx -> {
 									reportNearbyArmorStands(ctx.getSource());
@@ -931,12 +932,16 @@ public class ScdClient implements ClientModInitializer {
 	}
 
 	/**
-	 * Diagnostic for "which armor stand is which" - Hypixel NPCs turned out to
-	 * be built from an armor stand for the visible body plus a SEPARATE one
-	 * just to hold the floating name tag, and guessing which client-visible
-	 * flag combination tells them apart (isInvisible/isMarker) was wrong on
-	 * the first try. Dumps every nearby armor stand's actual flags so the
-	 * real distinguishing signal can be read off directly instead of guessed.
+	 * General-purpose diagnostic: dumps every nearby armor stand's actual
+	 * client-visible flags (name, invisible, marker, small, showArms,
+	 * showBasePlate, position). Originated from trying to tell an NPC's
+	 * "body" armor stand apart from its name-tag one - turned out every
+	 * armor stand near a Hypixel NPC is invisible=true (including name/
+	 * interact-prompt labels), with no distinct body stand at all, so that
+	 * specific question doesn't need re-asking. Kept as a permanent tool
+	 * (same category as /scd slayer debug nearby/scoreboard) for whatever
+	 * future feature needs to read real armor-stand data off a live server
+	 * instead of guessing it.
 	 */
 	private void reportNearbyArmorStands(FabricClientCommandSource source) {
 		var mc = Minecraft.getInstance();
