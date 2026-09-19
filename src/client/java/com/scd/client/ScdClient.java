@@ -1043,6 +1043,8 @@ public class ScdClient implements ClientModInitializer {
 		lines.add("=== SCD Slayer Debug ===");
 		lines.add("bossTrackerEnabled=" + config.slayer.bossTrackerEnabled);
 		lines.add("HUD render callback fired " + slayerHud.renderCallCount() + " times this session");
+		lines.add("RNG meter Daemon Shard estimate: multiplier=" + slayerRngMeter.daemonMultiplier()
+				+ " (~level " + slayerRngMeter.daemonLevelEstimate() + "/10)");
 		for (ScdSlayerType type : ScdSlayerType.values()) {
 			if (ScdSlayerAreaAllowlist.isRestricted(type)) {
 				lines.add(type.displayName() + " area check: " + (ScdSlayerScoreboard.isInAllowedArea(type) ? "PASS (in an allowed area)" : "FAIL (not in an allowed area)"));
