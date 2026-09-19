@@ -51,11 +51,6 @@ public class ScdSlayerBossTracker {
 	// per-Slayer list after its fight ends, before that type just goes back to showing nothing.
 	private static final long KILLED_DISPLAY_WINDOW_MS = 5_000;
 
-	// How long a Spider quest's "boss not spawned" scoreboard reading is tolerated before it's
-	// trusted as a genuine kill - covers the Tarantula Broodfather -> Conjoined Brood transition
-	// animation, confirmed live to make Hypixel's own sidebar blip "Slay the boss!" away briefly.
-	private static final long SPIDER_PHASE_TRANSITION_GRACE_MS = 3_000;
-
 	// Separate, much longer window used only for drop attribution (not the UI flash above) - the kill
 	// itself ends the quest instantly, but a boss's own drop isn't always delivered instantly the way
 	// Telekinesis delivers common loot, so this needs to comfortably cover walking back for a drop
@@ -103,8 +98,9 @@ public class ScdSlayerBossTracker {
 	private ScdSlayerType lastActiveType;
 	private long killedDisplayUntilMs;
 	private long lootAttributionUntilMs;
-	// 0 = not currently missing. See SPIDER_PHASE_TRANSITION_GRACE_MS/tick() for what this debounces.
-	private long spiderBossMissingSinceMs;
+	// Whether the Conjoined Brood entity has actually been seen yet during the current Tier V Spider
+	// fight - see spiderSecondPhaseExpected in tick() for what this gates.
+	private boolean spiderSeenConjoinedBroodThisFight;
 	// Hunting-phase timing: quest accepted to boss spawned, paused whenever nothing nearby has taken
 	// damage for HUNT_PAUSE_THRESHOLD_MS. Tracked separately from the boss fight itself.
 	private long huntStartMs;
@@ -155,31 +151,23 @@ public class ScdSlayerBossTracker {
 			quest = null;
 		}
 
-		// Tarantula Broodfather -> Conjoined Brood: confirmed live that Hypixel's own sidebar
-		// momentarily drops "Slay the boss!" the instant Broodfather's own HP bar hits zero, even
-		// though the fight continues under the new Conjoined Brood entity - taken at face value, that
-		// blip looked exactly like a real kill (premature "boss down" chat message + kill recorded at
-		// the wrong, much shorter elapsed time). First attempt checked for a live Conjoined Brood
-		// entity at the exact instant the scoreboard blips - confirmed live that this still wasn't
-		// enough, since the new entity apparently hasn't spawned into the world yet at that same tick.
-		// A short grace window instead of an immediate same-tick check covers the real gap regardless
-		// of exactly when the new entity appears.
-		boolean spiderPhasePending = previousQuest != null && previousQuest.type() == ScdSlayerType.SPIDER && previousQuest.bossSpawned();
-		if (spiderPhasePending) {
-			boolean scoreboardStillSpawned = quest != null && quest.bossSpawned();
-			if (scoreboardStillSpawned) {
-				spiderBossMissingSinceMs = 0;
-			} else {
-				long now = System.currentTimeMillis();
-				if (spiderBossMissingSinceMs == 0) spiderBossMissingSinceMs = now;
-				if (now - spiderBossMissingSinceMs < SPIDER_PHASE_TRANSITION_GRACE_MS) {
-					quest = new ScdSlayerQuest(previousQuest.type(), previousQuest.tier(), true);
-				} else {
-					spiderBossMissingSinceMs = 0;
-				}
-			}
-		} else {
-			spiderBossMissingSinceMs = 0;
+		// Tarantula Broodfather -> Conjoined Brood (Tier V only - the only tier with this two-phase
+		// mechanic): confirmed live that Hypixel's own sidebar momentarily drops "Slay the boss!" the
+		// instant Broodfather's own HP bar hits zero, even though the fight continues under the new
+		// Conjoined Brood entity - taken at face value, that blip looked exactly like a real kill.
+		// Two earlier attempts both guessed wrong: an immediate same-tick entity check (the new entity
+		// hadn't spawned into the world yet at that exact tick) and a fixed time-based grace window
+		// (guessing a duration instead of an actual signal, and wrongly applying to every tier, not
+		// just V). Looked up how SkyHanni handles this: it doesn't trust the scoreboard for this at
+		// all - it hard-codes the two-phase relationship and only treats the SECOND phase's death as
+		// real, bridging the original spawn time forward. Mirrored here: don't trust a "not spawned"
+		// reading as real for a Tier V Spider quest until spiderSeenConjoinedBroodThisFight is
+		// actually true (set below, the moment the Conjoined Brood entity is actually found - no
+		// guessed time limit, however long the transition animation takes).
+		boolean spiderSecondPhaseExpected = previousQuest != null && previousQuest.type() == ScdSlayerType.SPIDER
+				&& "V".equals(previousQuest.tier()) && previousQuest.bossSpawned() && !spiderSeenConjoinedBroodThisFight;
+		if (spiderSecondPhaseExpected && (quest == null || !quest.bossSpawned())) {
+			quest = new ScdSlayerQuest(previousQuest.type(), previousQuest.tier(), true);
 		}
 
 		if (quest != null) lastActiveType = quest.type();
@@ -206,6 +194,7 @@ public class ScdSlayerBossTracker {
 			maxHpSeen = 0;
 			lastHpFrac = null;
 			lastNameWasConjoinedBrood = false;
+			spiderSeenConjoinedBroodThisFight = false;
 			alertUntilMs.clear();
 			if (listener != null) {
 				listener.onHuntCompleted(quest, huntElapsedMs());
@@ -259,6 +248,9 @@ public class ScdSlayerBossTracker {
 				markAlert("spider_conjoined_transition");
 			}
 			lastNameWasConjoinedBrood = isConjoinedBrood;
+			// See spiderSecondPhaseExpected above - once this is true, a subsequent scoreboard "not
+			// spawned" reading is trusted immediately as the real end, no matter how long it's been.
+			if (isConjoinedBrood) spiderSeenConjoinedBroodThisFight = true;
 
 			Float hpFrac = currentHpFracOrNull();
 			if (hpFrac != null) {
