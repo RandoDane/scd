@@ -212,13 +212,14 @@ public class ScdClient implements ClientModInitializer {
 				? ScdTheme.ACCENT_SLAYER : null);
 	}
 
-	/** Draws a line from the player to the currently-tracked Slayer boss, through walls - see the registered ScdGlowRegistry adder above for the matching glow half. */
+	/** Draws a line + box around the currently-tracked Slayer boss, through walls - see the registered ScdGlowRegistry adder above for the matching glow half. */
 	private void renderBossHighlight() {
 		if (!config.slayer.bossHighlightEnabled) return;
 		var boss = slayerTracker.currentBossOrNull();
 		var player = Minecraft.getInstance().player;
 		if (boss == null || player == null) return;
 		ScdGizmoUtil.lineToEntity(player.getEyePosition(), boss, ScdTheme.ACCENT_SLAYER, true);
+		ScdGizmoUtil.boxAroundEntity(boss, ScdTheme.ACCENT_SLAYER, true);
 	}
 
 	/**

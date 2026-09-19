@@ -1,5 +1,6 @@
 package com.scd.client;
 
+import net.minecraft.gizmos.GizmoStyle;
 import net.minecraft.gizmos.Gizmos;
 import net.minecraft.gizmos.TextGizmo;
 import net.minecraft.world.entity.Entity;
@@ -18,14 +19,24 @@ import net.minecraft.world.phys.Vec3;
  * a Gizmo without persistForMillis() only lasts the tick/frame it was added
  * on, which is exactly what a "while tracking this target" feature wants
  * (stop calling it, it stops rendering, no separate cleanup needed).
+ *
+ * Note on thickness: EntityRenderState.outlineColor (the entity-glow mixin)
+ * has no matching width/thickness field - the glow itself is stuck at
+ * whatever fixed width vanilla's own outline pass uses, confirmed by reading
+ * every field on that class. Lines and boxes, unlike glow, DO take an
+ * explicit width, so LINE_WIDTH/BOX_STROKE_WIDTH below are the practical way
+ * to get a chunkier-looking highlight than the glow alone provides.
  */
 public final class ScdGizmoUtil {
+	private static final float LINE_WIDTH = 3f;
+	private static final float BOX_STROKE_WIDTH = 3f;
+
 	private ScdGizmoUtil() {
 	}
 
 	/** A line between two world positions. */
 	public static void line(Vec3 from, Vec3 to, int argbColor, boolean throughWalls) {
-		var properties = Gizmos.line(from, to, argbColor);
+		var properties = Gizmos.line(from, to, argbColor, LINE_WIDTH);
 		if (throughWalls) properties.setAlwaysOnTop();
 	}
 
@@ -48,6 +59,12 @@ public final class ScdGizmoUtil {
 	/** A small point marker at a fixed world position - for a waypoint/beacon-style callout. */
 	public static void marker(Vec3 pos, int argbColor, boolean throughWalls) {
 		var properties = Gizmos.point(pos, argbColor, 6f);
+		if (throughWalls) properties.setAlwaysOnTop();
+	}
+
+	/** A stroked (unfilled) box around an entity's current hitbox - re-call every tick to track it as it moves/grows. */
+	public static void boxAroundEntity(Entity target, int argbColor, boolean throughWalls) {
+		var properties = Gizmos.cuboid(target.getBoundingBox(), GizmoStyle.stroke(argbColor, BOX_STROKE_WIDTH));
 		if (throughWalls) properties.setAlwaysOnTop();
 	}
 }
