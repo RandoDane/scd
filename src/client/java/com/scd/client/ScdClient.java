@@ -43,6 +43,7 @@ public class ScdClient implements ClientModInitializer {
 	private ScdSlayerRngMeter slayerRngMeter;
 	private ScdSlayerDrops slayerDrops;
 	private ScdCarryQueue carryQueue;
+	private final ScdCarryBossWatcher carryBossWatcher = new ScdCarryBossWatcher(this::handleCarryBossKilled);
 	private final ScdInventoryWatcher inventoryWatcher = new ScdInventoryWatcher();
 	// Set by the "<Type> Slayer LVL N" completion message, consumed by the "RNG Meter - X Stored
 	// XP" message that immediately follows it - see checkSlayerCompletionMessages().
@@ -98,7 +99,6 @@ public class ScdClient implements ClientModInitializer {
 				String time = ScdSlayerHud.formatElapsed(elapsedMs);
 				announceSlayer("§a" + quest.type().displayName() + " Slayer boss down in " + time
 						+ (newBest ? " §6§lNEW BEST!" : ""));
-				creditCarries(quest, elapsedMs);
 			}
 
 			@Override
@@ -140,6 +140,7 @@ public class ScdClient implements ClientModInitializer {
 		});
 
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> ScdLog.guard("slayer tick", slayerTracker::tick));
+		ClientTickEvents.END_CLIENT_TICK.register(mc -> ScdLog.guard("carry boss watch", () -> carryBossWatcher.tick(carryQueue.active())));
 		// A HUD element that renders nothing, purely to piggyback ticking the inventory watcher onto
 		// HudElementRegistry rather than the shared ClientTickEvents.END_CLIENT_TICK above - see
 		// ScdSlayerHud.register() for why that event can go silent in a heavily modded environment.
@@ -220,6 +221,18 @@ public class ScdClient implements ClientModInitializer {
 
 	public ScdCarryQueue carryQueue() {
 		return carryQueue;
+	}
+
+	/** Every other player currently on the tab list (i.e. actually on this server right now) - used to pick/validate carry player names instead of trusting freehand typing. */
+	public List<String> onlinePlayerNames() {
+		var player = Minecraft.getInstance().player;
+		if (player == null || player.connection == null) return List.of();
+		String ownName = player.getGameProfile().name();
+		return player.connection.getListedOnlinePlayers().stream()
+				.map(info -> info.getProfile().name())
+				.filter(name -> !name.equalsIgnoreCase(ownName))
+				.sorted(String.CASE_INSENSITIVE_ORDER)
+				.toList();
 	}
 
 	/** Called after the settings screen closes, in case the server URL changed. */
@@ -396,24 +409,22 @@ public class ScdClient implements ClientModInitializer {
 	}
 
 	/**
-	 * Credits a just-finished boss kill toward every active carry entry for that
-	 * exact (type, tier), then announces the new progress in party chat -
-	 * unlike announceSlayer above, this is a real message sent to the server
-	 * (via "/pc", the same as if it had been typed), since the whole point is
-	 * for the customer being carried to see it. A single kill can finish
-	 * several entries at once (multiple customers carried together in the same
-	 * party), each getting its own message.
+	 * Fired by ScdCarryBossWatcher once a specific carry entry's OWN boss (found
+	 * via its "Spawned by: &lt;playerName&gt;" ownership tag, independent of
+	 * the local player's own Slayer quest - see ScdCarryBossWatcher) is
+	 * confirmed dead. Credits the kill, then announces the new progress in
+	 * party chat - unlike announceSlayer above, this is a real message sent to
+	 * the server (via "/pc", the same as if it had been typed), since the
+	 * whole point is for the customer being carried to see it.
 	 */
-	private void creditCarries(ScdSlayerQuest quest, long elapsedMs) {
-		for (ScdCarryEntry entry : carryQueue.activeMatching(quest.type(), quest.tier())) {
-			boolean justCompleted = carryQueue.creditKill(entry, elapsedMs);
-			if (justCompleted) {
-				String avgTime = ScdSlayerHud.formatElapsed(Math.round(entry.averageKillTimeMs()));
-				sendPartyChat(entry.playerName + ": carry complete! " + entry.killsCompleted + "/" + entry.killsOwed
-						+ " kills, avg kill time " + avgTime);
-			} else {
-				sendPartyChat(entry.playerName + ": " + entry.killsCompleted + "/" + entry.killsOwed + " kills");
-			}
+	private void handleCarryBossKilled(ScdCarryEntry entry, long elapsedMs) {
+		boolean justCompleted = carryQueue.creditKill(entry, elapsedMs);
+		if (justCompleted) {
+			String avgTime = ScdSlayerHud.formatElapsed(Math.round(entry.averageKillTimeMs()));
+			sendPartyChat(entry.playerName + ": carry complete! " + entry.killsCompleted + "/" + entry.killsOwed
+					+ " kills, avg kill time " + avgTime);
+		} else {
+			sendPartyChat(entry.playerName + ": " + entry.killsCompleted + "/" + entry.killsOwed + " kills");
 		}
 	}
 
@@ -544,14 +555,14 @@ public class ScdClient implements ClientModInitializer {
 										.then(ClientCommands.argument("type", StringArgumentType.word())
 												.then(ClientCommands.argument("tier", StringArgumentType.word())
 														.then(ClientCommands.argument("pricePerKill", com.mojang.brigadier.arguments.LongArgumentType.longArg(1))
-																.then(ClientCommands.argument("totalAmount", com.mojang.brigadier.arguments.LongArgumentType.longArg(1))
+																.then(ClientCommands.argument("bossCount", com.mojang.brigadier.arguments.LongArgumentType.longArg(1))
 																		.executes(ctx -> {
 																			addCarryCommand(ctx.getSource(),
 																					StringArgumentType.getString(ctx, "player"),
 																					StringArgumentType.getString(ctx, "type"),
 																					StringArgumentType.getString(ctx, "tier"),
 																					com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "pricePerKill"),
-																					com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "totalAmount"));
+																					com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "bossCount"));
 																			return 1;
 																		})))))))
 						.then(ClientCommands.literal("complete")
@@ -559,7 +570,13 @@ public class ScdClient implements ClientModInitializer {
 										.executes(ctx -> {
 											completeCarryCommand(ctx.getSource(), com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "index"));
 											return 1;
-										}))))
+										})))
+						.then(ClientCommands.literal("debug")
+								.requires(source -> config.devUnlocked)
+								.executes(ctx -> {
+									reportCarryDebug(ctx.getSource());
+									return 1;
+								})))
 				.then(ClientCommands.literal("item")
 						.then(ClientCommands.literal("nbt")
 								.requires(source -> config.devUnlocked)
@@ -659,7 +676,7 @@ public class ScdClient implements ClientModInitializer {
 
 	private static final List<String> CARRY_TIERS = List.of("I", "II", "III", "IV", "V");
 
-	private void addCarryCommand(FabricClientCommandSource source, String player, String typeText, String tier, long pricePerKill, long totalAmount) {
+	private void addCarryCommand(FabricClientCommandSource source, String player, String typeText, String tier, long pricePerKill, long bossCount) {
 		ScdSlayerType type = parseSlayerType(source, typeText);
 		if (type == null) return;
 		String tierUpper = tier.toUpperCase(java.util.Locale.ROOT);
@@ -668,13 +685,9 @@ public class ScdClient implements ClientModInitializer {
 			return;
 		}
 		tier = tierUpper;
-		if (totalAmount < pricePerKill) {
-			source.sendFeedback(Component.literal("Total amount is less than one kill's price."));
-			return;
-		}
-		ScdCarryEntry entry = carryQueue.add(player, type, tier, pricePerKill, totalAmount);
+		ScdCarryEntry entry = carryQueue.add(player, type, tier, pricePerKill, pricePerKill * bossCount);
 		source.sendFeedback(Component.literal("Added carry for " + player + ": " + entry.typeEnum().displayName()
-				+ " " + tier + ", " + entry.killsOwed + " kills owed."));
+				+ " " + tier + ", " + entry.killsOwed + " kills for " + ScdFormat.coins(entry.totalAmount) + " coins."));
 	}
 
 	private void completeCarryCommand(FabricClientCommandSource source, int oneBasedIndex) {
@@ -691,6 +704,28 @@ public class ScdClient implements ClientModInitializer {
 		}
 		carryQueue.markComplete(entry.id);
 		source.sendFeedback(Component.literal("Marked carry for " + entry.playerName + " as finished."));
+	}
+
+	/**
+	 * Diagnostic for "the carry isn't tracking that IGN's boss" reports: for
+	 * every active carry, shows whether a "Spawned by: &lt;playerName&gt;"
+	 * boss for that exact type is findable right now, and what
+	 * ScdCarryBossWatcher currently has tracked for it - the same live-vs-
+	 * tracker-belief split as /scd slayer debug.
+	 */
+	private void reportCarryDebug(FabricClientCommandSource source) {
+		var entries = carryQueue.active();
+		source.sendFeedback(Component.literal("=== Carry Debug (" + entries.size() + " active) ==="));
+		if (entries.isEmpty()) {
+			source.sendFeedback(Component.literal("No active carries."));
+			return;
+		}
+		for (ScdCarryEntry entry : entries) {
+			String line = entry.playerName + " - " + entry.typeEnum().displayName() + " " + entry.tier + ": "
+					+ carryBossWatcher.describeLive(entry);
+			source.sendFeedback(Component.literal(line));
+			ScdLog.info("carry debug: " + line);
+		}
 	}
 
 	/**

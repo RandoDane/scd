@@ -85,6 +85,22 @@ public class ScdCarryQueue {
 		return sorted;
 	}
 
+	/** Every active entry, unsorted - for feeding ScdCarryBossWatcher each tick. */
+	public List<ScdCarryEntry> active() {
+		List<ScdCarryEntry> result = new ArrayList<>();
+		for (ScdCarryEntry e : entries) if (e.isActive()) result.add(e);
+		return result;
+	}
+
+	/** Whichever entry was created most recently (active or not) - lets the "New Carry" form default to whatever type/tier you're currently running instead of always Zombie III. */
+	public ScdCarryEntry mostRecentOrNull() {
+		ScdCarryEntry latest = null;
+		for (ScdCarryEntry e : entries) {
+			if (latest == null || e.createdAt > latest.createdAt) latest = e;
+		}
+		return latest;
+	}
+
 	public int activeCount() {
 		int count = 0;
 		for (ScdCarryEntry e : entries) if (e.isActive()) count++;

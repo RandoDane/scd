@@ -341,8 +341,18 @@ public class ScdSlayerBossTracker {
 	 * render-list gap, etc.) so the caller can fall back to the distance/stickiness heuristic.
 	 */
 	private LivingEntity findBossViaOwnershipTag(Minecraft mc, ScdSlayerType type) {
-		String ownName = mc.player.getGameProfile().name();
+		return findBossViaOwnershipTag(mc, mc.player.getGameProfile().name(), type);
+	}
 
+	/**
+	 * Same ownership-tag lookup as above, but for an arbitrary IGN instead of
+	 * always the local player's own name - lets ScdCarryBossWatcher track a
+	 * carry customer's own boss the same reliable way, since that boss is
+	 * never tied to the local player's own scoreboard quest at all (a carry is
+	 * fundamentally about someone else's Slayer quest). Static/package-visible
+	 * since it needs no per-fight state, just the world snapshot.
+	 */
+	static LivingEntity findBossViaOwnershipTag(Minecraft mc, String ownerIgn, ScdSlayerType type) {
 		Entity ownershipTag = null;
 		for (Entity entity : mc.level.entitiesForRendering()) {
 			if (!entity.hasCustomName() || entity.getCustomName() == null) continue;
@@ -350,7 +360,7 @@ public class ScdSlayerBossTracker {
 
 			String clean = FORMATTING_CODE.matcher(entity.getCustomName().getString()).replaceAll("").trim();
 			Matcher matcher = SPAWNED_BY.matcher(clean);
-			if (matcher.matches() && matcher.group(1).trim().equalsIgnoreCase(ownName)) {
+			if (matcher.matches() && matcher.group(1).trim().equalsIgnoreCase(ownerIgn)) {
 				ownershipTag = entity;
 				break;
 			}
@@ -371,7 +381,7 @@ public class ScdSlayerBossTracker {
 		return closest;
 	}
 
-	private boolean matchesAnyName(LivingEntity entity, List<String> names) {
+	private static boolean matchesAnyName(LivingEntity entity, List<String> names) {
 		if (!entity.hasCustomName()) return false;
 		Component custom = entity.getCustomName();
 		if (custom == null) return false;
