@@ -185,9 +185,11 @@ public class ScdClient implements ClientModInitializer {
 		scheduler.scheduleAtFixedRate(this::refreshMayorPerks, 0, 10, TimeUnit.MINUTES);
 		ClientCommandRegistrationCallback.EVENT.register(this::registerCommands);
 
-		// Throwaway proof-of-concept adder for the entity-glow mixin - glows whatever's under the
-		// crosshair bright magenta while /scd debug glowtest is toggled on. Remove once confirmed live.
-		ScdGlowRegistry.register(entity -> glowTestActive && entity == Minecraft.getInstance().crosshairPickEntity
+		// Throwaway proof-of-concept adder for the entity-glow mixin - glows every armor stand
+		// (Hypixel NPCs and most boss nameplates are armor stands, often invisible ones, so this
+		// checks whether the outline still shows even when the model itself has nothing to draw)
+		// bright magenta while /scd debug glowtest is toggled on. Remove once confirmed live.
+		ScdGlowRegistry.register(entity -> glowTestActive && entity instanceof net.minecraft.world.entity.decoration.ArmorStand
 				? 0xFFFF00FF : null);
 	}
 
@@ -570,7 +572,7 @@ public class ScdClient implements ClientModInitializer {
 								.executes(ctx -> {
 									glowTestActive = !glowTestActive;
 									ctx.getSource().sendFeedback(Component.literal(glowTestActive
-											? "Glow test ON - whatever's under your crosshair should glow bright magenta, even through walls."
+											? "Glow test ON - every armor stand nearby (NPCs, most boss nameplates) should glow bright magenta, even through walls."
 											: "Glow test OFF."));
 									return 1;
 								}))
