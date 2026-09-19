@@ -93,10 +93,11 @@ public class ScdClient implements ClientModInitializer {
 				boolean newBest = slayerRecords.recordKill(quest.type(), quest.tier(), elapsedMs);
 				slayerSessionStats.recordKill(quest.tier(), elapsedMs);
 				slayerRngMeter.recordKill(quest.type(), quest.tier());
-				slayerRngMeter.recordKillTowardMeterEstimate(quest.type(), quest.tier());
 				Long baseXp = ScdSlayerRngMeter.baseSlayerXpForTier(quest.tier());
 				if (baseXp != null) {
-					slayerSessionStats.recordXpGained(Math.round(baseXp * mayorPerks.xpMultiplier()));
+					long xpGained = Math.round(baseXp * mayorPerks.xpMultiplier());
+					slayerSessionStats.recordXpGained(xpGained);
+					slayerRngMeter.recordKillTowardMeterEstimate(quest.type(), quest.tier(), xpGained);
 				}
 				String time = ScdSlayerHud.formatElapsed(elapsedMs);
 				announceSlayer("§a" + quest.type().displayName() + " Slayer boss down in " + time

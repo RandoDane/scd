@@ -146,22 +146,22 @@ public class ScdSlayerRngMeter {
 	}
 
 	/**
-	 * Estimates the meter's new value by adding this kill's own tier-based XP to whatever we last
-	 * knew, so the HUD keeps moving between real syncs instead of only updating when the player
-	 * happens to open the Slayer menu or complete a full quest. See XP_BY_TIER/RNG_METER_MIN_TIER for
-	 * where these numbers come from and why a small inaccuracy here is low-risk.
+	 * Estimates the meter's new value by adding this kill's own XP gain to whatever we last knew, so
+	 * the HUD keeps moving between real syncs instead of only updating when the player happens to open
+	 * the Slayer menu or complete a full quest. Takes the actual XP gained (base tier XP already
+	 * multiplied by any mayor/minister Slayer XP perk, e.g. Aatrox's - see ScdMayorPerks) rather than
+	 * looking up XP_BY_TIER itself, so this stays in sync with whatever the session-stats XP counter
+	 * shows instead of quietly ignoring the boost. See XP_BY_TIER/RNG_METER_MIN_TIER for where the base
+	 * numbers come from and why a small inaccuracy here is low-risk.
 	 */
-	public void recordKillTowardMeterEstimate(ScdSlayerType type, String tier) {
+	public void recordKillTowardMeterEstimate(ScdSlayerType type, String tier, long xpGained) {
 		if (tier == null) return;
 		int have = TIER_ORDER.indexOf(tier);
 		int min = TIER_ORDER.indexOf(RNG_METER_MIN_TIER);
 		if (have < 0 || have < min) return;
 
-		Long xp = XP_BY_TIER.get(tier);
-		if (xp == null) return;
-
 		long current = storedXpByType.getOrDefault(type.name(), 0L);
-		recordStoredXp(type, current + xp);
+		recordStoredXp(type, current + xpGained);
 	}
 
 	/** The base Slayer XP a kill of this tier awards, before any mayor/minister perk boost - see XP_BY_TIER. Null for an unrecognized tier. */
