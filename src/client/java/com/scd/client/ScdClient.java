@@ -51,7 +51,7 @@ public class ScdClient implements ClientModInitializer {
 	// Set by the "<Type> Slayer LVL N" completion message, consumed by the "RNG Meter - X Stored
 	// XP" message that immediately follows it - see checkSlayerCompletionMessages().
 	private String lastCompletedSlayerTypeName;
-	// Set by "/scd slayer menu dump" - the next screen that opens gets its full slot contents printed
+	// Set by "/scd slayer debug menu dump" - the next screen that opens gets its full slot contents printed
 	// to chat/log, then this clears itself.
 	private volatile boolean armMenuDump = false;
 	private ScdSlayerMenuWatcher slayerMenuWatcher;
@@ -555,47 +555,49 @@ public class ScdClient implements ClientModInitializer {
 						.executes(ctx -> {
 							runDebugReport(ctx.getSource());
 							return 1;
-						}))
-				// Throwaway proof-of-concept for the vanilla Gizmos rendering API - see ScdGizmoTest
-				// and FEATURE_ROADMAP.md's "T2/T3 re-scoped" section. Delete alongside that class once
-				// it's served its purpose.
-				.then(ClientCommands.literal("gizmotest")
-						.requires(source -> config.devUnlocked)
-						.executes(ctx -> {
-							gizmoTest.toggle();
-							ctx.getSource().sendFeedback(Component.literal(gizmoTest.isActive()
-									? "Gizmo test ON - a red line (normal) and a green line (always-on-top) should extend 10 blocks from where you're looking. Walk behind a wall and see which one disappears."
-									: "Gizmo test OFF."));
-							return 1;
-						}))
+						})
+						// Throwaway proof-of-concept for the vanilla Gizmos rendering API - see
+						// ScdGizmoTest and FEATURE_ROADMAP.md's "T2/T3 re-scoped" section. Delete
+						// alongside that class once it's served its purpose.
+						.then(ClientCommands.literal("gizmotest")
+								.executes(ctx -> {
+									gizmoTest.toggle();
+									ctx.getSource().sendFeedback(Component.literal(gizmoTest.isActive()
+											? "Gizmo test ON - a red line (normal) and a green line (always-on-top) should extend 10 blocks from where you're looking. Walk behind a wall and see which one disappears."
+											: "Gizmo test OFF."));
+									return 1;
+								}))
+						.then(ClientCommands.literal("item")
+								.then(ClientCommands.literal("nbt")
+										.executes(ctx -> {
+											reportLastHoveredNbt(ctx.getSource());
+											return 1;
+										}))))
 				.then(ClientCommands.literal("slayer")
-						.then(ClientCommands.literal("nearby")
-								.requires(source -> config.devUnlocked)
-								.executes(ctx -> {
-									reportNearbySlayerEntities(ctx.getSource());
-									return 1;
-								}))
-						.then(ClientCommands.literal("scoreboard")
-								.requires(source -> config.devUnlocked)
-								.executes(ctx -> {
-									reportSlayerScoreboard(ctx.getSource());
-									return 1;
-								}))
 						.then(ClientCommands.literal("debug")
 								.requires(source -> config.devUnlocked)
 								.executes(ctx -> {
 									reportSlayerDebug(ctx.getSource());
 									return 1;
-								}))
-						.then(ClientCommands.literal("menu")
-								.requires(source -> config.devUnlocked)
-								.then(ClientCommands.literal("dump")
+								})
+								.then(ClientCommands.literal("nearby")
 										.executes(ctx -> {
-											armMenuDump = true;
-											ctx.getSource().sendFeedback(Component.literal(
-													"Armed - open the Slayer menu now, its contents will be dumped to chat and logs/latest.log."));
+											reportNearbySlayerEntities(ctx.getSource());
 											return 1;
-										})))
+										}))
+								.then(ClientCommands.literal("scoreboard")
+										.executes(ctx -> {
+											reportSlayerScoreboard(ctx.getSource());
+											return 1;
+										}))
+								.then(ClientCommands.literal("menu")
+										.then(ClientCommands.literal("dump")
+												.executes(ctx -> {
+													armMenuDump = true;
+													ctx.getSource().sendFeedback(Component.literal(
+															"Armed - open the Slayer menu now, its contents will be dumped to chat and logs/latest.log."));
+													return 1;
+												}))))
 						.then(ClientCommands.literal("drops")
 								.then(ClientCommands.literal("list")
 										.then(ClientCommands.argument("type", StringArgumentType.word())
@@ -667,13 +669,6 @@ public class ScdClient implements ClientModInitializer {
 								.executes(ctx -> {
 									reportCarryDebug(ctx.getSource());
 									return 1;
-								})))
-				.then(ClientCommands.literal("item")
-						.then(ClientCommands.literal("nbt")
-								.requires(source -> config.devUnlocked)
-								.executes(ctx -> {
-									reportLastHoveredNbt(ctx.getSource());
-									return 1;
 								})));
 
 		dispatcher.register(root);
@@ -693,7 +688,7 @@ public class ScdClient implements ClientModInitializer {
 			config.devUnlocked = true;
 			config.save();
 			source.sendFeedback(Component.literal(
-					"Developer commands unlocked: /scd debug, /scd slayer nearby/scoreboard/debug/menu dump, /scd item nbt."));
+					"Developer commands unlocked: /scd debug (gizmotest, item nbt), /scd slayer debug (nearby, scoreboard, menu dump), /scd carry debug."));
 		} else {
 			source.sendFeedback(Component.literal("Incorrect code."));
 		}
@@ -849,12 +844,12 @@ public class ScdClient implements ClientModInitializer {
 
 	/**
 	 * Dumps every slot's item name + lore for whatever screen just opened - armed by
-	 * "/scd slayer menu dump". AbstractContainerMenu.slots is a plain client-visible field for any
+	 * "/scd slayer debug menu dump". AbstractContainerMenu.slots is a plain client-visible field for any
 	 * open container screen, so this works for the Slayer NPC menu the same as any chest.
 	 */
 	private void dumpScreenContents(Screen screen) {
 		String title = screen.getTitle().getString();
-		ScdLog.info("=== /scd slayer menu dump: " + screen.getClass().getSimpleName() + " (title=\"" + title + "\") ===");
+		ScdLog.info("=== /scd slayer debug menu dump: " + screen.getClass().getSimpleName() + " (title=\"" + title + "\") ===");
 
 		if (!(screen instanceof AbstractContainerScreen<?> containerScreen)) {
 			announceSlayer("§e[SCD] Opened screen \"" + title + "\" (" + screen.getClass().getSimpleName() + ") isn't a container screen - nothing to dump.");
@@ -908,7 +903,7 @@ public class ScdClient implements ClientModInitializer {
 		for (String line : lines) {
 			source.sendFeedback(Component.literal(line));
 		}
-		ScdLog.info("=== /scd slayer nearby ===");
+		ScdLog.info("=== /scd slayer debug nearby ===");
 		for (String line : lines) {
 			ScdLog.info(line);
 		}
@@ -928,7 +923,7 @@ public class ScdClient implements ClientModInitializer {
 		for (String line : lines) {
 			source.sendFeedback(Component.literal(line));
 		}
-		ScdLog.info("=== /scd slayer scoreboard ===");
+		ScdLog.info("=== /scd slayer debug scoreboard ===");
 		for (String line : lines) {
 			ScdLog.info(line);
 		}
