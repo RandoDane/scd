@@ -101,7 +101,18 @@ public class ScdClient implements ClientModInitializer {
 				if (baseXp != null) {
 					long xpGained = Math.round(baseXp * mayorPerks.xpMultiplier());
 					slayerSessionStats.recordXpGained(xpGained);
+					Long meterBefore = slayerRngMeter.storedXp(quest.type());
 					slayerRngMeter.recordKillTowardMeterEstimate(quest.type(), quest.tier(), xpGained);
+					Long meterAfter = slayerRngMeter.storedXp(quest.type());
+					// Verification logging for the "RNG meter isn't accounting for tier/mayor boost"
+					// report - the formula/keying already looked correct from reading the code, so this
+					// gives hard proof of exactly what happened on the next real kill instead of guessing.
+					ScdLog.info("RNG meter estimate: " + quest.type().displayName() + " " + quest.tier()
+							+ " kill -> baseXp=" + baseXp + " x mayorMultiplier=" + mayorPerks.xpMultiplier()
+							+ " (source=" + mayorPerks.sourceMayorNameOrNull() + ") = xpGained=" + xpGained
+							+ " | meter " + meterBefore + " -> " + meterAfter);
+				} else {
+					ScdLog.info("RNG meter estimate: no baseXp for tier \"" + quest.tier() + "\" - nothing added.");
 				}
 				String time = ScdSlayerHud.formatElapsed(elapsedMs);
 				announceSlayer("§a" + quest.type().displayName() + " Slayer boss down in " + time

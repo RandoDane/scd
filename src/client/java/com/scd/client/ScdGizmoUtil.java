@@ -40,9 +40,21 @@ public final class ScdGizmoUtil {
 		if (throughWalls) properties.setAlwaysOnTop();
 	}
 
+	// Pushed the line's start point forward by this much, toward the target, instead of starting
+	// exactly at the given point - confirmed via Skyblocker/SkyHanni/CaribouStonks' real source that
+	// none of them start a tracer at the raw eye/camera position (SkyHanni's own raw-eye-position line
+	// helper is @Deprecated in favor of this), since a vertex sitting essentially at the camera causes
+	// near-plane clipping/distortion. Matches their ~1-2 block offset.
+	private static final double LINE_START_PUSH_DISTANCE = 1.5;
+
 	/** A line from a fixed point to wherever an entity currently is - re-call every tick to track it as it moves. */
 	public static void lineToEntity(Vec3 from, Entity target, int argbColor, boolean throughWalls) {
-		line(from, target.position(), argbColor, throughWalls);
+		Vec3 to = target.position();
+		Vec3 delta = to.subtract(from);
+		if (delta.lengthSqr() > LINE_START_PUSH_DISTANCE * LINE_START_PUSH_DISTANCE) {
+			from = from.add(delta.normalize().scale(LINE_START_PUSH_DISTANCE));
+		}
+		line(from, to, argbColor, throughWalls);
 	}
 
 	/** Floating billboard text at a fixed world position. */
