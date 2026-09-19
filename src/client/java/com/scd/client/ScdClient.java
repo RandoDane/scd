@@ -185,12 +185,15 @@ public class ScdClient implements ClientModInitializer {
 		scheduler.scheduleAtFixedRate(this::refreshMayorPerks, 0, 10, TimeUnit.MINUTES);
 		ClientCommandRegistrationCallback.EVENT.register(this::registerCommands);
 
-		// Throwaway proof-of-concept adder for the entity-glow mixin - glows every armor stand
-		// (Hypixel NPCs and most boss nameplates are armor stands, often invisible ones, so this
-		// checks whether the outline still shows even when the model itself has nothing to draw)
-		// bright magenta while /scd debug glowtest is toggled on. Remove once confirmed live.
-		ScdGlowRegistry.register(entity -> glowTestActive && entity instanceof net.minecraft.world.entity.decoration.ArmorStand
-				? 0xFFFF00FF : null);
+		// Throwaway proof-of-concept adder for the entity-glow mixin. Confirmed live: Hypixel NPCs
+		// are themselves an armor stand, and there's a SEPARATE, invisible "marker" armor stand
+		// stacked above just to host the floating name tag - glowing every armor stand lit up both.
+		// Excluding invisible/marker stands should leave only the NPC's own visible body glowing.
+		ScdGlowRegistry.register(entity -> {
+			if (!glowTestActive || !(entity instanceof net.minecraft.world.entity.decoration.ArmorStand stand)) return null;
+			if (stand.isInvisible() || stand.isMarker()) return null;
+			return 0xFFFF00FF;
+		});
 	}
 
 	/**
@@ -572,7 +575,7 @@ public class ScdClient implements ClientModInitializer {
 								.executes(ctx -> {
 									glowTestActive = !glowTestActive;
 									ctx.getSource().sendFeedback(Component.literal(glowTestActive
-											? "Glow test ON - every armor stand nearby (NPCs, most boss nameplates) should glow bright magenta, even through walls."
+											? "Glow test ON - NPC bodies nearby should glow bright magenta, but NOT their floating name tags, even through walls."
 											: "Glow test OFF."));
 									return 1;
 								}))
