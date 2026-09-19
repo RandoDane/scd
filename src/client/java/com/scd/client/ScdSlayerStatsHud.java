@@ -89,7 +89,7 @@ public class ScdSlayerStatsHud {
 		grid.add(new Stat("Kills", String.valueOf(kills)));
 		grid.add(new Stat("Avg Kill Time", ScdSlayerHud.formatElapsed(avgMs)));
 		if (avgHuntMs > 0) grid.add(new Stat("Avg Spawn Time", ScdSlayerHud.formatElapsed(avgHuntMs)));
-		grid.add(new Stat("XP Gained", xpGained > 0 ? ScdFormat.compactCount(xpGained) : "-"));
+		grid.add(new Stat("XP Gained", xpGained > 0 ? ScdFormat.compactCount(xpGained, 99_900) : "-"));
 		boolean showBoost = xpBoostPercent > 0 && xpBoostMayor != null;
 		String boostLine = showBoost ? String.format(Locale.ROOT, "+%.0f%% %s Slayer XP", xpBoostPercent, xpBoostMayor) : null;
 
