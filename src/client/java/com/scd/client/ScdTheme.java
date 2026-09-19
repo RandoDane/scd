@@ -2,17 +2,27 @@ package com.scd.client;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 
 import java.util.Locale;
 
 /**
  * Shared palette and drawing primitives for SCD's own flat-card GUI style,
  * used instead of vanilla's beveled button/checkbox look everywhere we build
- * a screen. GuiGraphicsExtractor has no rounded-rect or blur primitive, so
- * "pretty" here means: gradient panels, a soft drop shadow (on top-level
- * surfaces only - nested widgets stay flat so shadows don't stack into a
- * smear), accent-colored left bars, and a hover brighten.
+ * a screen (panel/card/etc. below - the /scd config screens). "pretty" there
+ * means: gradient panels, a soft drop shadow (on top-level surfaces only -
+ * nested widgets stay flat so shadows don't stack into a smear),
+ * accent-colored left bars, and a hover brighten.
+ *
+ * panelRounded() below is a SEPARATE, newer style for the always-on HUD
+ * overlays specifically (boss tracker, session stats - never the /scd
+ * screens) - see ScdSlayerHud/ScdSlayerStatsHud. Confirmed live
+ * (2026-09-19) that despite this class's own older assumption otherwise,
+ * GuiGraphicsExtractor DOES support real rounded corners via
+ * blitSprite()'s automatic nine-slice handling, reusing vanilla's own
+ * "popup/background" sprite rather than shipping a custom texture.
  *
  * Widget colors are kept near-opaque rather than translucent: a translucent
  * widget stacked on top of an already-translucent panel compounds into a
@@ -45,6 +55,10 @@ public final class ScdTheme {
 
 	/** Everything drawn through the scaled* helpers below renders at this fraction of native font size, for denser screens (10+ categories). */
 	public static final float TEXT_SCALE = 0.85f;
+	/** heroNumber() renders at this multiple of native font size - the single most important stat on a HUD box, e.g. kills/hour. */
+	public static final float HERO_SCALE = 2.2f;
+
+	private static final Identifier POPUP_BACKGROUND_SPRITE = Identifier.fromNamespaceAndPath("minecraft", "popup/background");
 
 	private ScdTheme() {
 	}
@@ -66,6 +80,33 @@ public final class ScdTheme {
 		g.fillGradient(x, y, x + w, y + h, hovered ? CARD_HOVER_TOP : CARD_TOP, hovered ? CARD_HOVER_BOTTOM : CARD_BOTTOM);
 		g.outline(x, y, w, h, hovered ? accentColor : PANEL_BORDER);
 		g.fill(x, y, x + 3, y + h, accentColor);
+	}
+
+	/**
+	 * Rounded-corner HUD panel background, for the always-on overlays (never the /scd screens - use
+	 * panel() there). blitSprite() automatically nine-slice-scales this to (w, h) using the sprite's
+	 * own .mcmeta scaling metadata (a plain dark fill with a subtle lighter border, already exactly
+	 * what a HUD box needs) - no custom texture asset required. Casts the same drop shadow as panel()
+	 * since this is also always a top-level surface.
+	 */
+	public static void panelRounded(GuiGraphicsExtractor g, int x, int y, int w, int h) {
+		shadow(g, x, y, w, h);
+		g.blitSprite(RenderPipelines.GUI_TEXTURED, POPUP_BACKGROUND_SPRITE, x, y, w, h);
+	}
+
+	/** The single most important number on a HUD box (e.g. kills/hour) - big and bold, left-aligned at (x, y). */
+	public static void heroNumber(GuiGraphicsExtractor g, Font font, String text, int x, int y, int color) {
+		var pose = g.pose();
+		pose.pushMatrix();
+		pose.translate(x, y);
+		pose.scale(HERO_SCALE, HERO_SCALE);
+		g.text(font, Component.literal(text), 0, 0, color, true);
+		pose.popMatrix();
+	}
+
+	/** Height in native (unscaled) pixels that a heroNumber() line occupies - for laying out whatever comes after it. */
+	public static int heroLineHeight(Font font) {
+		return Math.round(font.lineHeight * HERO_SCALE);
 	}
 
 	public static void divider(GuiGraphicsExtractor g, int x, int y, int width) {

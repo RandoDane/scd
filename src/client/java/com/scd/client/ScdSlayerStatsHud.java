@@ -18,14 +18,21 @@ import java.util.Locale;
  * Purely derived from fights ScdSlayerBossTracker has actually observed -
  * not persisted, resets on game restart, and never shown until at least one
  * kill has happened (there's nothing meaningful to summarize before that).
+ *
+ * Redesigned (2026-09-19) around a "hero stat" pattern - a small caps label
+ * over one big emphasized number for the single most useful stat
+ * (kills/hour), with everything else in a two-column grid below - see
+ * ScdTheme.panelRounded/heroNumber. Draws in two passes with the same
+ * increment logic (measureOnly first to get the exact panel height, then
+ * for real once the rounded background is in place) rather than tracking
+ * height analytically by hand, so the layout can't silently drift out of
+ * sync with what actually gets drawn.
  */
 public class ScdSlayerStatsHud {
 	private static final Identifier ID = Identifier.fromNamespaceAndPath("scd", "slayer_stats_overlay");
-	private static final int BG_COLOR = 0x90000000;
-	private static final int TITLE_COLOR = 0xFF55DDFF;
-	private static final int LABEL_COLOR = 0xFFAAAAAA;
-	private static final int PADDING = 4;
-	private static final int MIN_WIDTH = 140;
+	private static final int PADDING = 10;
+	private static final int MIN_WIDTH = 200;
+	private static final int COLUMN_GAP = 12;
 
 	private final ScdConfig config;
 	private final ScdSlayerSessionStats stats;
@@ -49,6 +56,9 @@ public class ScdSlayerStatsHud {
 
 	public ScdOverlayBox.Bounds renderPreview(GuiGraphicsExtractor graphics, Font font) {
 		return renderContent(graphics, font, true);
+	}
+
+	private record Stat(String label, String value) {
 	}
 
 	private ScdOverlayBox.Bounds renderContent(GuiGraphicsExtractor graphics, Font font, boolean preview) {
@@ -80,40 +90,77 @@ public class ScdSlayerStatsHud {
 		}
 
 		String tier = preview ? "IV" : stats.currentTierOrNull();
-		String title = "Slayer Session" + (tier != null ? " (Tier " + tier + ")" : "");
+		String subtitle = tier != null ? "Tier " + tier : "No active quest";
+		String heroText = String.format(Locale.ROOT, "%.1f", perHour);
 
-		List<String> body = new ArrayList<>();
-		body.add("Kills: " + kills);
-		body.add("Avg: " + ScdSlayerHud.formatElapsed(avgMs) + "  " + String.format(Locale.ROOT, "%.1f", perHour) + "/hr");
-		if (avgHuntMs > 0) body.add("Avg time to spawn boss: " + ScdSlayerHud.formatElapsed(avgHuntMs));
-		if (xpGained > 0) {
-			String xpLine = "XP: " + ScdFormat.compactCount(xpGained);
-			if (xpBoostPercent > 0 && xpBoostMayor != null) {
-				xpLine += String.format(Locale.ROOT, " (+%.0f%% %s)", xpBoostPercent, xpBoostMayor);
+		List<Stat> grid = new ArrayList<>();
+		grid.add(new Stat("Kills", String.valueOf(kills)));
+		grid.add(new Stat("Avg Kill Time", ScdSlayerHud.formatElapsed(avgMs)));
+		if (avgHuntMs > 0) grid.add(new Stat("Avg Spawn Time", ScdSlayerHud.formatElapsed(avgHuntMs)));
+		grid.add(new Stat("XP Gained", xpGained > 0 ? ScdFormat.compactCount(xpGained) : "-"));
+		boolean showBoost = xpBoostPercent > 0 && xpBoostMayor != null;
+		String boostLine = showBoost ? String.format(Locale.ROOT, "+%.0f%% %s Slayer XP", xpBoostPercent, xpBoostMayor) : null;
+
+		int panelX = config.slayer.statsHudPosition.x;
+		int panelY = config.slayer.statsHudPosition.y;
+		int panelWidth = MIN_WIDTH;
+
+		// Pass 1: measure only, to get the exact height before drawing the background.
+		int panelHeight = layout(null, font, panelX, panelY, panelWidth, subtitle, heroText, grid, boostLine);
+		// Pass 2: background first, then the real content on top of it.
+		ScdTheme.panelRounded(graphics, panelX, panelY, panelWidth, panelHeight);
+		layout(graphics, font, panelX, panelY, panelWidth, subtitle, heroText, grid, boostLine);
+
+		return new ScdOverlayBox.Bounds(panelX, panelY, panelWidth, panelHeight);
+	}
+
+	/** graphics == null means measure only (return the final y, don't draw anything) - see renderContent's two-pass comment. */
+	private int layout(GuiGraphicsExtractor graphics, Font font, int panelX, int panelY, int panelWidth,
+			String subtitle, String heroText, List<Stat> grid, String boostLine) {
+		int contentX = panelX + PADDING;
+		int fieldWidth = panelWidth - PADDING * 2;
+		int columnWidth = (fieldWidth - COLUMN_GAP) / 2;
+		int lineH = ScdTheme.lineHeight(font);
+
+		int y = panelY + PADDING;
+
+		if (graphics != null) graphics.text(font, Component.literal("Slayer Session"), contentX, y, ScdTheme.ACCENT_SLAYER, true);
+		y += font.lineHeight + 2;
+		if (graphics != null) ScdTheme.label(graphics, font, subtitle, contentX, y, ScdTheme.TEXT_SECONDARY);
+		y += lineH + 6;
+		if (graphics != null) ScdTheme.divider(graphics, contentX, y, fieldWidth);
+		y += 9;
+
+		if (graphics != null) ScdTheme.sectionLabel(graphics, font, "Kills / Hour", contentX, y);
+		y += lineH + 2;
+		if (graphics != null) ScdTheme.heroNumber(graphics, font, heroText, contentX, y, ScdTheme.TEXT_PRIMARY);
+		y += ScdTheme.heroLineHeight(font) + 8;
+		if (graphics != null) ScdTheme.divider(graphics, contentX, y, fieldWidth);
+		y += 9;
+
+		for (int i = 0; i < grid.size(); i += 2) {
+			Stat left = grid.get(i);
+			if (graphics != null) {
+				ScdTheme.sectionLabel(graphics, font, left.label(), contentX, y);
+				ScdTheme.label(graphics, font, left.value(), contentX, y + lineH + 2, ScdTheme.TEXT_PRIMARY);
 			}
-			body.add(xpLine);
+			if (i + 1 < grid.size()) {
+				Stat right = grid.get(i + 1);
+				int colX2 = contentX + columnWidth + COLUMN_GAP;
+				if (graphics != null) {
+					ScdTheme.sectionLabel(graphics, font, right.label(), colX2, y);
+					ScdTheme.label(graphics, font, right.value(), colX2, y + lineH + 2, ScdTheme.TEXT_PRIMARY);
+				}
+			}
+			y += lineH * 2 + 8;
 		}
 
-		int textWidth = font.width(title);
-		for (String line : body) textWidth = Math.max(textWidth, font.width(line));
-		int width = Math.max(MIN_WIDTH, textWidth + PADDING * 2);
-
-		int x = config.slayer.statsHudPosition.x + PADDING;
-		int y = config.slayer.statsHudPosition.y + PADDING;
-		int lineHeight = font.lineHeight + 2;
-
-		int boxHeight = PADDING * 2 + lineHeight * (1 + body.size());
-		graphics.fill(x - PADDING, y - PADDING, x - PADDING + width, y - PADDING + boxHeight, BG_COLOR);
-
-		graphics.text(font, Component.literal(title), x, y, TITLE_COLOR, true);
-		y += lineHeight;
-
-		for (String line : body) {
-			graphics.text(font, Component.literal(line), x, y, LABEL_COLOR, true);
-			y += lineHeight;
+		if (boostLine != null) {
+			if (graphics != null) ScdTheme.label(graphics, font, boostLine, contentX, y, ScdTheme.TEXT_MUTED);
+			y += lineH + 4;
 		}
 
-		return new ScdOverlayBox.Bounds(x - PADDING, config.slayer.statsHudPosition.y, width, boxHeight);
+		return y - panelY + PADDING;
 	}
 
 	/**
