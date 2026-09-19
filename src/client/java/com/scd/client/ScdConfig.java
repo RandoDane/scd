@@ -46,6 +46,11 @@ public class ScdConfig {
 
 		public boolean minibossAlertEnabled = true;
 
+		// World-space glow + line to whichever boss is currently tracked - see ScdGlowRegistry/
+		// ScdGizmoUtil, gated on this instead of always-on so it can be turned off on a crowded
+		// shared island where every nearby glow starts adding visual noise.
+		public boolean bossHighlightEnabled = true;
+
 		public boolean statsHudEnabled = true;
 		public Pos statsHudPosition = new Pos(8, 220);
 

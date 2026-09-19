@@ -32,7 +32,7 @@ public class ScdSlayerConfigScreen extends Screen {
 	private final Set<ScdSlayerType> expanded = EnumSet.noneOf(ScdSlayerType.class);
 
 	private int panelX, panelY, panelWidth, panelHeight;
-	private int trackerLabelY, minibossLabelY, statsLabelY;
+	private int trackerLabelY, minibossLabelY, bossHighlightLabelY, statsLabelY;
 	private final List<LabelRow> labelRows = new ArrayList<>();
 
 	public ScdSlayerConfigScreen(Screen parent, ScdConfig config, ScdClient client) {
@@ -65,6 +65,11 @@ public class ScdSlayerConfigScreen extends Screen {
 		minibossLabelY = y + 3;
 		addRenderableWidget(new ScdToggle(contentX + fieldWidth - 26, y, Component.literal("Miniboss alerts"),
 				ScdTheme.ACCENT_SLAYER, config.slayer.minibossAlertEnabled, v -> config.slayer.minibossAlertEnabled = v));
+		y += 18;
+
+		bossHighlightLabelY = y + 3;
+		addRenderableWidget(new ScdToggle(contentX + fieldWidth - 26, y, Component.literal("Highlight boss"),
+				ScdTheme.ACCENT_SLAYER, config.slayer.bossHighlightEnabled, v -> config.slayer.bossHighlightEnabled = v));
 		y += 24;
 
 		statsLabelY = y + 3;
@@ -185,6 +190,7 @@ public class ScdSlayerConfigScreen extends Screen {
 
 		ScdTheme.label(g, this.font, "Show tracker while fighting a boss", panelX + PADDING, trackerLabelY, ScdTheme.TEXT_SECONDARY);
 		ScdTheme.label(g, this.font, "Chat alert when a miniboss spawns", panelX + PADDING, minibossLabelY, ScdTheme.TEXT_SECONDARY);
+		ScdTheme.label(g, this.font, "Glow + line to the tracked boss, through walls", panelX + PADDING, bossHighlightLabelY, ScdTheme.TEXT_SECONDARY);
 		ScdTheme.label(g, this.font, "Session kill-count / avg time HUD", panelX + PADDING, statsLabelY, ScdTheme.TEXT_SECONDARY);
 
 		for (LabelRow row : labelRows) {
