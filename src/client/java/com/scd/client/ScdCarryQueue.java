@@ -62,17 +62,30 @@ public class ScdCarryQueue {
 		return result;
 	}
 
-	/** Credits one kill toward an entry's progress, returning true if this kill just finished it. */
+	/**
+	 * Credits one kill toward an entry's progress. Deliberately does NOT
+	 * auto-complete at killsOwed - reaching the target is a signal to close
+	 * it out, not the closing itself; the entry stays ACTIVE (and still shows
+	 * in the active list) until "Done" is actually clicked (see
+	 * ScdClient.finishCarryManually), since kill-count math and "the carrier
+	 * is actually ready to wrap up and send the review prompt" aren't the
+	 * same moment. Returns true the instant killsCompleted first reaches
+	 * killsOwed (exact crossing, not every kill after) - the caller uses this
+	 * to fire the one-time "target reached" chat prompt.
+	 */
 	public boolean creditKill(ScdCarryEntry entry, long killTimeMs) {
 		entry.killsCompleted++;
 		entry.totalKillTimeMs += killTimeMs;
-		boolean justCompleted = entry.killsCompleted >= entry.killsOwed;
-		if (justCompleted) {
-			entry.status = "COMPLETED";
-			entry.completedAt = System.currentTimeMillis();
-		}
+		boolean justReachedTarget = entry.killsCompleted == entry.killsOwed;
 		save();
-		return justCompleted;
+		return justReachedTarget;
+	}
+
+	public ScdCarryEntry findByIdOrNull(long id) {
+		for (ScdCarryEntry e : entries) {
+			if (e.id == id) return e;
+		}
+		return null;
 	}
 
 	/**

@@ -16,6 +16,8 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
 import net.minecraft.world.item.component.ItemLore;
 
 import java.util.List;
@@ -422,17 +424,55 @@ public class ScdClient implements ClientModInitializer {
 	 * confirmed dead. Credits the kill, then announces the new progress in
 	 * party chat - unlike announceSlayer above, this is a real message sent to
 	 * the server (via "/pc", the same as if it had been typed), since the
-	 * whole point is for the customer being carried to see it.
+	 * whole point is for the customer being carried to see it. Reaching the
+	 * target count doesn't close the carry by itself (see
+	 * ScdCarryQueue.creditKill) - it instead prints a client-local, clickable
+	 * follow-up prompt (see promptCarryTargetReached) so closing out and
+	 * asking for a review stays a deliberate action.
 	 */
 	private void handleCarryBossKilled(ScdCarryEntry entry, long elapsedMs) {
-		boolean justCompleted = carryQueue.creditKill(entry, elapsedMs);
-		if (justCompleted) {
-			String avgTime = ScdSlayerHud.formatElapsed(Math.round(entry.averageKillTimeMs()));
-			sendPartyChat(entry.playerName + ": carry complete! " + entry.killsCompleted + "/" + entry.killsOwed
-					+ " kills, avg kill time " + avgTime);
-		} else {
-			sendPartyChat(entry.playerName + ": " + entry.killsCompleted + "/" + entry.killsOwed + " kills");
+		boolean justReachedTarget = carryQueue.creditKill(entry, elapsedMs);
+		sendPartyChat(entry.playerName + ": " + entry.killsCompleted + "/" + entry.killsOwed + " kills");
+		if (justReachedTarget) {
+			promptCarryTargetReached(entry);
 		}
+	}
+
+	/**
+	 * Client-local (never sent to the server) chat prompt with clickable
+	 * buttons, shown once a carry first hits its target kill count: "Done"
+	 * closes it out and sends the review message the same as the GUI button;
+	 * "+5"/"+10" extend it at its own already-agreed price without opening any
+	 * screen; "Custom" fills the chat input with the extend command and lets
+	 * the amount be typed in, rather than running it immediately. Not yet
+	 * confirmed live whether Hypixel or another mod intercepts/strips click
+	 * events on received chat lines - if these buttons don't respond, check
+	 * that first.
+	 */
+	private void promptCarryTargetReached(ScdCarryEntry entry) {
+		var player = Minecraft.getInstance().player;
+		if (player == null) return;
+
+		MutableComponent line = Component.literal("[SCD] " + entry.playerName + "'s carry hit "
+				+ entry.killsCompleted + "/" + entry.killsOwed + "! ").withStyle(net.minecraft.ChatFormatting.AQUA);
+		line.append(chatButton("Done", "/scd carry completeid " + entry.id, true, "Close this carry and send the review message"));
+		line.append(Component.literal("  "));
+		line.append(chatButton("+5", "/scd carry extendid " + entry.id + " 5", true, "Add 5 more " + entry.typeEnum().displayName() + " bosses at the same price"));
+		line.append(Component.literal("  "));
+		line.append(chatButton("+10", "/scd carry extendid " + entry.id + " 10", true, "Add 10 more " + entry.typeEnum().displayName() + " bosses at the same price"));
+		line.append(Component.literal("  "));
+		line.append(chatButton("Custom", "/scd carry extendid " + entry.id + " ", false, "Fill the chat box to type a custom amount"));
+		player.sendSystemMessage(line);
+	}
+
+	/** One clickable "[Label]" chat segment - runImmediately true executes the command on click (ClickEvent.RunCommand), false only fills the chat input box for editing first (ClickEvent.SuggestCommand). */
+	private static MutableComponent chatButton(String label, String command, boolean runImmediately, String hoverText) {
+		var click = runImmediately ? new net.minecraft.network.chat.ClickEvent.RunCommand(command)
+				: new net.minecraft.network.chat.ClickEvent.SuggestCommand(command);
+		Style style = Style.EMPTY.withColor(net.minecraft.ChatFormatting.YELLOW).withUnderlined(true)
+				.withClickEvent(click)
+				.withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(Component.literal(hoverText)));
+		return Component.literal("[" + label + "]").setStyle(style);
 	}
 
 	/**
@@ -589,6 +629,24 @@ public class ScdClient implements ClientModInitializer {
 											completeCarryCommand(ctx.getSource(), com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "index"));
 											return 1;
 										})))
+						// completeid/extendid address an entry by its stable id rather than its
+						// position in the list - these back the clickable chat buttons in
+						// promptCarryTargetReached, where an index could shift by the time it's
+						// actually clicked.
+						.then(ClientCommands.literal("completeid")
+								.then(ClientCommands.argument("id", com.mojang.brigadier.arguments.LongArgumentType.longArg())
+										.executes(ctx -> {
+											completeCarryByIdCommand(ctx.getSource(), com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "id"));
+											return 1;
+										})))
+						.then(ClientCommands.literal("extendid")
+								.then(ClientCommands.argument("id", com.mojang.brigadier.arguments.LongArgumentType.longArg())
+										.then(ClientCommands.argument("amount", com.mojang.brigadier.arguments.LongArgumentType.longArg(1))
+												.executes(ctx -> {
+													extendCarryByIdCommand(ctx.getSource(), com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "id"),
+															com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "amount"));
+													return 1;
+												}))))
 						.then(ClientCommands.literal("debug")
 								.requires(source -> config.devUnlocked)
 								.executes(ctx -> {
@@ -727,6 +785,29 @@ public class ScdClient implements ClientModInitializer {
 		}
 		carryQueue.markComplete(entry.id);
 		source.sendFeedback(Component.literal("Marked carry for " + entry.playerName + " as finished."));
+	}
+
+	/** Backs the "Done" chat button in promptCarryTargetReached - unlike completeCarryCommand above (index-based, chat-only, no review message), this matches the GUI "Done" button exactly: marks finished AND sends the review prompt. */
+	private void completeCarryByIdCommand(FabricClientCommandSource source, long id) {
+		ScdCarryEntry entry = carryQueue.findByIdOrNull(id);
+		if (entry == null || !entry.isActive()) {
+			source.sendFeedback(Component.literal("That carry is already finished or no longer exists."));
+			return;
+		}
+		finishCarryManually(entry);
+		source.sendFeedback(Component.literal("Marked carry for " + entry.playerName + " as finished."));
+	}
+
+	/** Backs the "+5"/"+10"/"Custom" chat buttons in promptCarryTargetReached. */
+	private void extendCarryByIdCommand(FabricClientCommandSource source, long id, long additionalBossCount) {
+		ScdCarryEntry entry = carryQueue.findByIdOrNull(id);
+		if (entry == null) {
+			source.sendFeedback(Component.literal("That carry no longer exists."));
+			return;
+		}
+		carryQueue.extend(id, additionalBossCount);
+		source.sendFeedback(Component.literal("Added " + additionalBossCount + " more " + entry.typeEnum().displayName()
+				+ " bosses for " + entry.playerName + " (now " + entry.killsOwed + " total)."));
 	}
 
 	/**
