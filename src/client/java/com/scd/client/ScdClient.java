@@ -46,6 +46,7 @@ public class ScdClient implements ClientModInitializer {
 	private ScdSlayerDrops slayerDrops;
 	private ScdCarryQueue carryQueue;
 	private final ScdCarryBossWatcher carryBossWatcher = new ScdCarryBossWatcher(this::handleCarryBossKilled);
+	private final ScdGizmoTest gizmoTest = new ScdGizmoTest();
 	private final ScdInventoryWatcher inventoryWatcher = new ScdInventoryWatcher();
 	// Set by the "<Type> Slayer LVL N" completion message, consumed by the "RNG Meter - X Stored
 	// XP" message that immediately follows it - see checkSlayerCompletionMessages().
@@ -144,6 +145,7 @@ public class ScdClient implements ClientModInitializer {
 
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> ScdLog.guard("slayer tick", slayerTracker::tick));
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> ScdLog.guard("carry boss watch", () -> carryBossWatcher.tick(carryQueue.active())));
+		ClientTickEvents.END_CLIENT_TICK.register(mc -> ScdLog.guard("gizmo test", gizmoTest::tick));
 		// A HUD element that renders nothing, purely to piggyback ticking the inventory watcher onto
 		// HudElementRegistry rather than the shared ClientTickEvents.END_CLIENT_TICK above - see
 		// ScdSlayerHud.register() for why that event can go silent in a heavily modded environment.
@@ -552,6 +554,18 @@ public class ScdClient implements ClientModInitializer {
 						.requires(source -> config.devUnlocked)
 						.executes(ctx -> {
 							runDebugReport(ctx.getSource());
+							return 1;
+						}))
+				// Throwaway proof-of-concept for the vanilla Gizmos rendering API - see ScdGizmoTest
+				// and FEATURE_ROADMAP.md's "T2/T3 re-scoped" section. Delete alongside that class once
+				// it's served its purpose.
+				.then(ClientCommands.literal("gizmotest")
+						.requires(source -> config.devUnlocked)
+						.executes(ctx -> {
+							gizmoTest.toggle();
+							ctx.getSource().sendFeedback(Component.literal(gizmoTest.isActive()
+									? "Gizmo test ON - a red line (normal) and a green line (always-on-top) should extend 10 blocks from where you're looking. Walk behind a wall and see which one disappears."
+									: "Gizmo test OFF."));
 							return 1;
 						}))
 				.then(ClientCommands.literal("slayer")
