@@ -40,6 +40,18 @@ public class ScdSlayerStatsHud {
 		this.mayorPerks = mayorPerks;
 	}
 
+	/**
+	 * Called every tick (from ScdSlayerHud, which owns the shared tick callback post-merge) with
+	 * whatever quest is currently active, if any - keeps ScdSlayerSessionStats in sync with the
+	 * live type/tier so it knows when to reset (a genuine type change) vs. just switch which tier's
+	 * bucket is showing (see ScdSlayerSessionStats.setCurrentType/setCurrentTier).
+	 */
+	public void trackQuest(ScdSlayerQuest quest) {
+		if (quest == null) return;
+		stats.setCurrentType(quest.type());
+		stats.setCurrentTier(quest.tier());
+	}
+
 	private record Stat(String label, String value) {
 	}
 
