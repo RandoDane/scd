@@ -27,4 +27,29 @@ public final class ScdFormat {
 		String s = String.format(java.util.Locale.ROOT, "%.1f", n);
 		return s.endsWith(".0") ? s.substring(0, s.length() - 2) : s;
 	}
+
+	private static final java.util.regex.Pattern COMPACT_NUMBER = java.util.regex.Pattern.compile("^(\\d+(?:\\.\\d+)?)([kKmMbB]?)$");
+
+	/** Parses a coin amount that may use a k/m/b suffix ("1.3m" -> 1,300,000; "800k" -> 800,000; plain "50000" still works) - the inverse of coins() above, for typed price input. Returns null if the text isn't a valid number. */
+	public static Long parseCompactLong(String text) {
+		if (text == null) return null;
+		String trimmed = text.trim();
+		if (trimmed.isEmpty()) return null;
+		var matcher = COMPACT_NUMBER.matcher(trimmed);
+		if (!matcher.matches()) return null;
+
+		double value;
+		try {
+			value = Double.parseDouble(matcher.group(1));
+		} catch (NumberFormatException e) {
+			return null;
+		}
+		double multiplier = switch (matcher.group(2).toUpperCase(java.util.Locale.ROOT)) {
+			case "K" -> 1_000.0;
+			case "M" -> 1_000_000.0;
+			case "B" -> 1_000_000_000.0;
+			default -> 1.0;
+		};
+		return Math.round(value * multiplier);
+	}
 }

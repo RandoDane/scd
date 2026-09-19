@@ -110,10 +110,10 @@ public class ScdCarryFormScreen extends Screen {
 		pricePerKillBox = new EditBox(this.font, contentX, y, fieldWidth, 14, Component.literal("Price per kill"));
 		pricePerKillBox.setBordered(false);
 		pricePerKillBox.setTextColor(ScdTheme.TEXT_PRIMARY);
-		pricePerKillBox.setHint(Component.literal("Price per kill"));
+		pricePerKillBox.setHint(Component.literal("e.g. 1.3m, 800k, 50000"));
 		pricePerKillBox.setValue(pricePerKillDraft);
 		pricePerKillBox.setResponder(s -> {
-			restrictToDigits(pricePerKillBox, s);
+			restrictToCompactNumber(pricePerKillBox, s);
 			pricePerKillDraft = pricePerKillBox.getValue();
 		});
 		addRenderableWidget(pricePerKillBox);
@@ -175,10 +175,14 @@ public class ScdCarryFormScreen extends Screen {
 			errorText = "\"" + typedName + "\" isn't on the server right now - use \"Choose online player...\".";
 			return;
 		}
-		long pricePerKill = parseLongOrZero(pricePerKillBox.getValue());
+		Long pricePerKill = ScdFormat.parseCompactLong(pricePerKillBox.getValue());
+		if (pricePerKill == null || pricePerKill <= 0) {
+			errorText = "Enter a valid price per kill (e.g. 1.3m, 800k, 50000).";
+			return;
+		}
 		long bossCount = parseLongOrZero(bossCountBox.getValue());
-		if (pricePerKill <= 0 || bossCount <= 0) {
-			errorText = "Enter a price per kill and amount of bosses.";
+		if (bossCount <= 0) {
+			errorText = "Enter how many bosses this covers.";
 			return;
 		}
 
@@ -191,6 +195,12 @@ public class ScdCarryFormScreen extends Screen {
 	/** EditBox has no built-in input filter in this API - strips non-digits on every keystroke instead. */
 	private static void restrictToDigits(EditBox box, String text) {
 		String cleaned = text.replaceAll("[^0-9]", "");
+		if (!cleaned.equals(text)) box.setValue(cleaned);
+	}
+
+	/** Same idea, but also allows a decimal point and a trailing k/m/b suffix - full format validity is checked at parse time (ScdFormat.parseCompactLong), not enforced live. */
+	private static void restrictToCompactNumber(EditBox box, String text) {
+		String cleaned = text.replaceAll("[^0-9.kKmMbB]", "");
 		if (!cleaned.equals(text)) box.setValue(cleaned);
 	}
 
@@ -221,9 +231,9 @@ public class ScdCarryFormScreen extends Screen {
 		ScdTheme.sectionLabel(g, this.font, "Price Per Kill", rowContentX, priceLabelY);
 		ScdTheme.sectionLabel(g, this.font, "Amount Of Bosses", rowContentX, bossCountLabelY);
 
-		long pricePerKill = parseLongOrZero(pricePerKillBox.getValue());
+		Long pricePerKill = ScdFormat.parseCompactLong(pricePerKillBox.getValue());
 		long bossCount = parseLongOrZero(bossCountBox.getValue());
-		String totalText = pricePerKill > 0 && bossCount > 0
+		String totalText = pricePerKill != null && pricePerKill > 0 && bossCount > 0
 				? "Total: " + ScdFormat.coins(pricePerKill * bossCount) + " coins"
 				: "Total: -";
 		ScdTheme.label(g, this.font, totalText, rowContentX, totalLabelY, ScdTheme.TEXT_SECONDARY);

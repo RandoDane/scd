@@ -67,16 +67,19 @@ public class ScdCarryQueueScreen extends Screen {
 				String text = entry.playerName + " - " + entry.typeEnum().displayName() + " " + entry.tier + " (" + progress + ")";
 				rowLabels.add(new RowLabel(text, y + 3, entry.isActive()));
 
-				int buttonsWidth = entry.isActive() ? 40 : 18;
+				int buttonsWidth = entry.isActive() ? 58 : 36;
 				int rowWidth = fieldWidth - buttonsWidth - 4;
 				int bx = contentX + rowWidth + 6;
 				if (entry.isActive()) {
 					addRenderableWidget(new ScdButton(bx, y, 20, ROW_HEIGHT - 2, Component.literal("Done"), ScdTheme.ACCENT_SLAYER, () -> {
-						client.carryQueue().markComplete(entry.id);
+						client.finishCarryManually(entry);
 						rebuildWidgets();
 					}));
 					bx += 22;
 				}
+				addRenderableWidget(new ScdButton(bx, y, 16, ROW_HEIGHT - 2, Component.literal("+"), ScdTheme.ACCENT_SLAYER, () ->
+						Minecraft.getInstance().setScreen(new ScdCarryExtendScreen(this, client, entry))));
+				bx += 18;
 				addRenderableWidget(new ScdButton(bx, y, 16, ROW_HEIGHT - 2, Component.literal("x"), ScdTheme.ACCENT_SLAYER, () -> {
 					client.carryQueue().remove(entry.id);
 					rebuildWidgets();
@@ -87,8 +90,12 @@ public class ScdCarryQueueScreen extends Screen {
 		y += 6;
 
 		if (pageCount > 1) {
+			// Own row above the buttons - it used to share the button row at the same y as "Next >"
+			// and render right on top of it (visible overlap in testing).
+			pageLabelY = y;
+			y += 10;
+
 			int navWidth = (fieldWidth - 8) / 2;
-			pageLabelY = y + 3;
 			int finalPageCount = pageCount;
 			addRenderableWidget(new ScdButton(contentX, y, navWidth, 16, Component.literal("< Prev"), ScdTheme.ACCENT_SLAYER, () -> {
 				if (page > 0) {
@@ -137,7 +144,8 @@ public class ScdCarryQueueScreen extends Screen {
 		}
 		if (pageLabelY >= 0) {
 			int pageCount = Math.max(1, (client.carryQueue().all().size() + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE);
-			ScdTheme.label(g, this.font, "Page " + (page + 1) + "/" + pageCount, panelX + panelWidth - PADDING - 50, pageLabelY, ScdTheme.TEXT_MUTED);
+			ScdTheme.scaledCenteredText(g, this.font, Component.literal("Page " + (page + 1) + "/" + pageCount),
+					panelX + panelWidth / 2, pageLabelY, ScdTheme.TEXT_MUTED);
 		}
 	}
 

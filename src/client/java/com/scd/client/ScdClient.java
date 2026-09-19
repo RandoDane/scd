@@ -436,6 +436,17 @@ public class ScdClient implements ClientModInitializer {
 	}
 
 	/**
+	 * Called from ScdCarryQueueScreen's "Done" button - manually closing out a
+	 * carry (whether or not the kill count actually reached killsOwed) sends a
+	 * closing party-chat message asking for a review, separate from the
+	 * automatic per-kill progress/completion pings above.
+	 */
+	public void finishCarryManually(ScdCarryEntry entry) {
+		carryQueue.markComplete(entry.id);
+		sendPartyChat("gg " + entry.playerName + " Please leave a review in #reviews in the relevant Discord");
+	}
+
+	/**
 	 * Sends a real message to party chat, exactly as if "/pc <text>" had been
 	 * typed and submitted - goes through the same client connection method the
 	 * chat screen itself uses for a slash-prefixed command, so signing/
@@ -561,14 +572,14 @@ public class ScdClient implements ClientModInitializer {
 								.then(ClientCommands.argument("player", StringArgumentType.word())
 										.then(ClientCommands.argument("type", StringArgumentType.word())
 												.then(ClientCommands.argument("tier", StringArgumentType.word())
-														.then(ClientCommands.argument("pricePerKill", com.mojang.brigadier.arguments.LongArgumentType.longArg(1))
+														.then(ClientCommands.argument("pricePerKill", StringArgumentType.word())
 																.then(ClientCommands.argument("bossCount", com.mojang.brigadier.arguments.LongArgumentType.longArg(1))
 																		.executes(ctx -> {
 																			addCarryCommand(ctx.getSource(),
 																					StringArgumentType.getString(ctx, "player"),
 																					StringArgumentType.getString(ctx, "type"),
 																					StringArgumentType.getString(ctx, "tier"),
-																					com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "pricePerKill"),
+																					StringArgumentType.getString(ctx, "pricePerKill"),
 																					com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "bossCount"));
 																			return 1;
 																		})))))))
@@ -683,7 +694,7 @@ public class ScdClient implements ClientModInitializer {
 
 	private static final List<String> CARRY_TIERS = List.of("I", "II", "III", "IV", "V");
 
-	private void addCarryCommand(FabricClientCommandSource source, String player, String typeText, String tier, long pricePerKill, long bossCount) {
+	private void addCarryCommand(FabricClientCommandSource source, String player, String typeText, String tier, String pricePerKillText, long bossCount) {
 		ScdSlayerType type = parseSlayerType(source, typeText);
 		if (type == null) return;
 		String tierUpper = tier.toUpperCase(java.util.Locale.ROOT);
@@ -692,6 +703,11 @@ public class ScdClient implements ClientModInitializer {
 			return;
 		}
 		tier = tierUpper;
+		Long pricePerKill = ScdFormat.parseCompactLong(pricePerKillText);
+		if (pricePerKill == null || pricePerKill <= 0) {
+			source.sendFeedback(Component.literal("Invalid price per kill \"" + pricePerKillText + "\" - try a plain number or e.g. 1.3m, 800k."));
+			return;
+		}
 		ScdCarryEntry entry = carryQueue.add(player, type, tier, pricePerKill, pricePerKill * bossCount);
 		source.sendFeedback(Component.literal("Added carry for " + player + ": " + entry.typeEnum().displayName()
 				+ " " + tier + ", " + entry.killsOwed + " kills for " + ScdFormat.coins(entry.totalAmount) + " coins."));

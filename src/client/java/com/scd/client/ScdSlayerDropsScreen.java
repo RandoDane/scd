@@ -77,8 +77,12 @@ public class ScdSlayerDropsScreen extends Screen {
 		y += 6;
 
 		if (pageCount > 1) {
+			// Own row above the buttons - it used to share the button row at the same y as "Next >"
+			// and render right on top of it (visible overlap in testing).
+			pageLabelY = y;
+			y += 10;
+
 			int navWidth = (fieldWidth - 8) / 2;
-			pageLabelY = y + 3;
 			int finalPageCount = pageCount;
 			addRenderableWidget(new ScdButton(contentX, y, navWidth, 16, Component.literal("< Prev"), ScdTheme.ACCENT_SLAYER, () -> {
 				if (page > 0) {
@@ -130,7 +134,8 @@ public class ScdSlayerDropsScreen extends Screen {
 		}
 		if (pageLabelY >= 0) {
 			int pageCount = Math.max(1, (client.slayerDrops().entriesForType(type).size() + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE);
-			ScdTheme.label(g, this.font, "Page " + (page + 1) + "/" + pageCount, panelX + panelWidth - PADDING - 50, pageLabelY, ScdTheme.TEXT_MUTED);
+			ScdTheme.scaledCenteredText(g, this.font, Component.literal("Page " + (page + 1) + "/" + pageCount),
+					panelX + panelWidth / 2, pageLabelY, ScdTheme.TEXT_MUTED);
 		}
 	}
 

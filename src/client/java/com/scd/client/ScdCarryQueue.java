@@ -75,6 +75,28 @@ public class ScdCarryQueue {
 		return justCompleted;
 	}
 
+	/**
+	 * Adds more bosses to an existing entry at its own already-agreed price
+	 * (a repeat customer at the same deal, not a renegotiation), returning
+	 * true if it found the entry. Reactivates a COMPLETED entry if the new
+	 * total isn't fully credited yet - "add more" is meant to keep tracking
+	 * the same relationship, not spawn a parallel one.
+	 */
+	public boolean extend(long id, long additionalBossCount) {
+		for (ScdCarryEntry e : entries) {
+			if (e.id != id) continue;
+			e.killsOwed += additionalBossCount;
+			e.totalAmount += e.pricePerKill * additionalBossCount;
+			if ("COMPLETED".equals(e.status) && e.killsCompleted < e.killsOwed) {
+				e.status = "ACTIVE";
+				e.completedAt = 0;
+			}
+			save();
+			return true;
+		}
+		return false;
+	}
+
 	/** Every entry, active ones first (oldest first), then completed ones (most recently finished first). */
 	public List<ScdCarryEntry> all() {
 		List<ScdCarryEntry> sorted = new ArrayList<>(entries);
