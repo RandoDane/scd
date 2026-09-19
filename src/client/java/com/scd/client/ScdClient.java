@@ -42,6 +42,7 @@ public class ScdClient implements ClientModInitializer {
 	private ScdQuiverHud quiverHud;
 	private ScdSlayerRngMeter slayerRngMeter;
 	private ScdSlayerDrops slayerDrops;
+	private ScdCarryQueue carryQueue;
 	private final ScdInventoryWatcher inventoryWatcher = new ScdInventoryWatcher();
 	// Set by the "<Type> Slayer LVL N" completion message, consumed by the "RNG Meter - X Stored
 	// XP" message that immediately follows it - see checkSlayerCompletionMessages().
@@ -73,6 +74,7 @@ public class ScdClient implements ClientModInitializer {
 		slayerRngMeter = ScdSlayerRngMeter.load();
 		slayerMenuWatcher = new ScdSlayerMenuWatcher(slayerRngMeter);
 		slayerDrops = ScdSlayerDrops.load();
+		carryQueue = ScdCarryQueue.load();
 		slayerHud = new ScdSlayerHud(config, slayerTracker, slayerRecords, slayerRngMeter, slayerDrops);
 		slayerHud.register();
 		slayerStatsHud = new ScdSlayerStatsHud(config, slayerSessionStats, slayerTracker, mayorPerks);
@@ -96,6 +98,7 @@ public class ScdClient implements ClientModInitializer {
 				String time = ScdSlayerHud.formatElapsed(elapsedMs);
 				announceSlayer("§a" + quest.type().displayName() + " Slayer boss down in " + time
 						+ (newBest ? " §6§lNEW BEST!" : ""));
+				creditCarries(quest, elapsedMs);
 			}
 
 			@Override
@@ -213,6 +216,10 @@ public class ScdClient implements ClientModInitializer {
 
 	public ScdSlayerDrops slayerDrops() {
 		return slayerDrops;
+	}
+
+	public ScdCarryQueue carryQueue() {
+		return carryQueue;
 	}
 
 	/** Called after the settings screen closes, in case the server URL changed. */
@@ -388,6 +395,39 @@ public class ScdClient implements ClientModInitializer {
 		if (player != null) player.sendSystemMessage(Component.literal(text));
 	}
 
+	/**
+	 * Credits a just-finished boss kill toward every active carry entry for that
+	 * exact (type, tier), then announces the new progress in party chat -
+	 * unlike announceSlayer above, this is a real message sent to the server
+	 * (via "/pc", the same as if it had been typed), since the whole point is
+	 * for the customer being carried to see it. A single kill can finish
+	 * several entries at once (multiple customers carried together in the same
+	 * party), each getting its own message.
+	 */
+	private void creditCarries(ScdSlayerQuest quest, long elapsedMs) {
+		for (ScdCarryEntry entry : carryQueue.activeMatching(quest.type(), quest.tier())) {
+			boolean justCompleted = carryQueue.creditKill(entry, elapsedMs);
+			if (justCompleted) {
+				String avgTime = ScdSlayerHud.formatElapsed(Math.round(entry.averageKillTimeMs()));
+				sendPartyChat(entry.playerName + ": carry complete! " + entry.killsCompleted + "/" + entry.killsOwed
+						+ " kills, avg kill time " + avgTime);
+			} else {
+				sendPartyChat(entry.playerName + ": " + entry.killsCompleted + "/" + entry.killsOwed + " kills");
+			}
+		}
+	}
+
+	/**
+	 * Sends a real message to party chat, exactly as if "/pc <text>" had been
+	 * typed and submitted - goes through the same client connection method the
+	 * chat screen itself uses for a slash-prefixed command, so signing/
+	 * whatever else the server expects is handled the same way it always is.
+	 */
+	private void sendPartyChat(String text) {
+		var player = Minecraft.getInstance().player;
+		if (player != null && player.connection != null) player.connection.sendCommand("pc " + text);
+	}
+
 	private void openConfigScreen() {
 		// Submitting a chat command closes the chat screen right after this callback
 		// returns, which would immediately stomp a setScreen() called from inside it -
@@ -493,6 +533,33 @@ public class ScdClient implements ClientModInitializer {
 																	com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "index"));
 															return 1;
 														}))))))
+				.then(ClientCommands.literal("carry")
+						.then(ClientCommands.literal("list")
+								.executes(ctx -> {
+									reportCarries(ctx.getSource());
+									return 1;
+								}))
+						.then(ClientCommands.literal("add")
+								.then(ClientCommands.argument("player", StringArgumentType.word())
+										.then(ClientCommands.argument("type", StringArgumentType.word())
+												.then(ClientCommands.argument("tier", StringArgumentType.word())
+														.then(ClientCommands.argument("pricePerKill", com.mojang.brigadier.arguments.LongArgumentType.longArg(1))
+																.then(ClientCommands.argument("totalAmount", com.mojang.brigadier.arguments.LongArgumentType.longArg(1))
+																		.executes(ctx -> {
+																			addCarryCommand(ctx.getSource(),
+																					StringArgumentType.getString(ctx, "player"),
+																					StringArgumentType.getString(ctx, "type"),
+																					StringArgumentType.getString(ctx, "tier"),
+																					com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "pricePerKill"),
+																					com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "totalAmount"));
+																			return 1;
+																		})))))))
+						.then(ClientCommands.literal("complete")
+								.then(ClientCommands.argument("index", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
+										.executes(ctx -> {
+											completeCarryCommand(ctx.getSource(), com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "index"));
+											return 1;
+										}))))
 				.then(ClientCommands.literal("item")
 						.then(ClientCommands.literal("nbt")
 								.requires(source -> config.devUnlocked)
@@ -571,6 +638,59 @@ public class ScdClient implements ClientModInitializer {
 		var entry = entries.get(index);
 		slayerDrops.remove(type, entry.itemId());
 		source.sendFeedback(Component.literal("Removed \"" + entry.displayName() + "\" from " + type.displayName() + " Slayer drops."));
+	}
+
+	/** Full carry list for chat-only use, indexed for use with "/scd carry complete". */
+	private void reportCarries(FabricClientCommandSource source) {
+		var entries = carryQueue.all();
+		source.sendFeedback(Component.literal("=== Carries (" + entries.size() + ") ==="));
+		if (entries.isEmpty()) {
+			source.sendFeedback(Component.literal("No carries yet."));
+			return;
+		}
+		for (int i = 0; i < entries.size(); i++) {
+			var entry = entries.get(i);
+			String progress = entry.isActive() ? entry.killsCompleted + "/" + entry.killsOwed : "done";
+			source.sendFeedback(Component.literal((i + 1) + ". " + entry.playerName + " - "
+					+ entry.typeEnum().displayName() + " " + entry.tier + " (" + progress + ")"));
+		}
+		source.sendFeedback(Component.literal("Mark one finished with /scd carry complete <number>"));
+	}
+
+	private static final List<String> CARRY_TIERS = List.of("I", "II", "III", "IV", "V");
+
+	private void addCarryCommand(FabricClientCommandSource source, String player, String typeText, String tier, long pricePerKill, long totalAmount) {
+		ScdSlayerType type = parseSlayerType(source, typeText);
+		if (type == null) return;
+		String tierUpper = tier.toUpperCase(java.util.Locale.ROOT);
+		if (!CARRY_TIERS.contains(tierUpper)) {
+			source.sendFeedback(Component.literal("Unknown tier \"" + tier + "\" - try one of: " + String.join(", ", CARRY_TIERS)));
+			return;
+		}
+		tier = tierUpper;
+		if (totalAmount < pricePerKill) {
+			source.sendFeedback(Component.literal("Total amount is less than one kill's price."));
+			return;
+		}
+		ScdCarryEntry entry = carryQueue.add(player, type, tier, pricePerKill, totalAmount);
+		source.sendFeedback(Component.literal("Added carry for " + player + ": " + entry.typeEnum().displayName()
+				+ " " + tier + ", " + entry.killsOwed + " kills owed."));
+	}
+
+	private void completeCarryCommand(FabricClientCommandSource source, int oneBasedIndex) {
+		var entries = carryQueue.all();
+		int index = oneBasedIndex - 1;
+		if (index < 0 || index >= entries.size()) {
+			source.sendFeedback(Component.literal("No carry #" + oneBasedIndex + " - run /scd carry list first."));
+			return;
+		}
+		var entry = entries.get(index);
+		if (!entry.isActive()) {
+			source.sendFeedback(Component.literal("That carry is already finished."));
+			return;
+		}
+		carryQueue.markComplete(entry.id);
+		source.sendFeedback(Component.literal("Marked carry for " + entry.playerName + " as finished."));
 	}
 
 	/**
