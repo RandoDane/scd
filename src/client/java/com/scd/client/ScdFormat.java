@@ -23,6 +23,11 @@ public final class ScdFormat {
 		return String.valueOf(n);
 	}
 
+	/** Same as compactCount(n), but keeps showing the exact value until it reaches minToShorten instead of abbreviating from 1,000 - e.g. the Slayer session XP stat, which should read as an exact number until it's actually big enough that abbreviating helps. */
+	public static String compactCount(long n, long minToShorten) {
+		return n < minToShorten ? String.valueOf(n) : compactCount(n);
+	}
+
 	private static String trimTrailingZero(double n) {
 		String s = String.format(java.util.Locale.ROOT, "%.1f", n);
 		return s.endsWith(".0") ? s.substring(0, s.length() - 2) : s;
