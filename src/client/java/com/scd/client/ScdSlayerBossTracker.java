@@ -147,6 +147,18 @@ public class ScdSlayerBossTracker {
 		if (quest != null && !ScdSlayerScoreboard.isInAllowedArea(quest.type())) {
 			quest = null;
 		}
+
+		// Tarantula Broodfather -> Conjoined Brood: confirmed live that Hypixel's own sidebar
+		// momentarily drops "Slay the boss!" the instant Broodfather's own HP bar hits zero, even
+		// though the fight continues under the new Conjoined Brood entity - taken at face value, that
+		// blip looked exactly like a real kill (premature "boss down" chat message + kill recorded).
+		// Cross-checking for a live Conjoined Brood entity nearby overrides the scoreboard's momentary
+		// word and keeps the same fight/timer running instead of ending and immediately "respawning" it.
+		if (previousQuest != null && previousQuest.type() == ScdSlayerType.SPIDER && previousQuest.bossSpawned()
+				&& (quest == null || !quest.bossSpawned()) && spiderSecondPhaseStillActive(mc)) {
+			quest = new ScdSlayerQuest(previousQuest.type(), previousQuest.tier(), true);
+		}
+
 		if (quest != null) lastActiveType = quest.type();
 
 		if (previousQuest == null && quest != null) {
@@ -379,6 +391,16 @@ public class ScdSlayerBossTracker {
 			}
 		}
 		return closest;
+	}
+
+	/** Whether a live "Conjoined Brood" nameplate exists nearby right now - see the tick() call site for why. */
+	private boolean spiderSecondPhaseStillActive(Minecraft mc) {
+		for (Entity entity : mc.level.entitiesForRendering()) {
+			if (!(entity instanceof LivingEntity living) || !living.isAlive()) continue;
+			if (living.distanceTo(mc.player) > ENTITY_SCAN_RADIUS) continue;
+			if (matchesAnyName(living, List.of("Conjoined Brood"))) return true;
+		}
+		return false;
 	}
 
 	private static boolean matchesAnyName(LivingEntity entity, List<String> names) {
