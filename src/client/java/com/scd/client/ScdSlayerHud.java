@@ -68,6 +68,7 @@ public class ScdSlayerHud {
 			renderCallCount.incrementAndGet();
 			ScdLog.guard("slayer HUD", () -> {
 				tracker.tick();
+				statsHud.trackQuest(tracker.currentQuestOrNull());
 				renderContent(graphics, Minecraft.getInstance().font, false);
 			});
 		});

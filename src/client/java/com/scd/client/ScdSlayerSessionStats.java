@@ -22,6 +22,12 @@ public class ScdSlayerSessionStats {
 	// level regardless of which tier earned it, so a single running total for the session is the
 	// meaningful number rather than one bucket per tier.
 	private long totalXpGained;
+	// Everything above is only ever keyed by TIER, never by type - switching from Spider IV to
+	// Enderman IV would otherwise silently mix both types' kills/times into the same "IV" bucket, and
+	// totalXpGained has no tier-keying to fall back on at all. setCurrentType below is the guard: a
+	// genuine type change clears everything, since it's a different grind entirely, not just a
+	// different tier of the same one (which legitimately keeps separate per-tier buckets on purpose).
+	private ScdSlayerType currentType;
 
 	public void recordKill(String tier, long elapsedMs) {
 		if (tier == null) return;
@@ -47,6 +53,23 @@ public class ScdSlayerSessionStats {
 	/** Switches which tier's stats are shown, without needing a kill first - e.g. the moment the active quest's tier changes. */
 	public void setCurrentTier(String tier) {
 		if (tier != null) currentTier = tier;
+	}
+
+	/**
+	 * Called every tick with whatever Slayer type is currently active. Switching to a genuinely
+	 * different type (Spider -> Enderman, say) wipes every accumulated stat - kills, times, XP - since
+	 * that's a different grind, not a continuation of the same one. Switching TIER within the same
+	 * type does NOT reset anything; that's the existing, intentional per-tier bucketing above.
+	 */
+	public void setCurrentType(ScdSlayerType type) {
+		if (type == null) return;
+		if (currentType != null && currentType != type) {
+			killTimesByTier.clear();
+			huntTimesByTier.clear();
+			totalXpGained = 0;
+			currentTier = null;
+		}
+		currentType = type;
 	}
 
 	public String currentTierOrNull() {
