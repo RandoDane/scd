@@ -47,6 +47,10 @@ public class ScdClient implements ClientModInitializer {
 	private ScdCarryQueue carryQueue;
 	private final ScdCarryBossWatcher carryBossWatcher = new ScdCarryBossWatcher(this::handleCarryBossKilled);
 	private final ScdInventoryWatcher inventoryWatcher = new ScdInventoryWatcher();
+	// Throwaway proof-of-concept for the entity-glow mixin (see FEATURE_ROADMAP.md's "T2/T3
+	// re-scoped" section) - /scd debug glowtest toggles this, the registered adder below does the
+	// rest. Remove alongside its adder/command once confirmed live.
+	private volatile boolean glowTestActive = false;
 	// Set by the "<Type> Slayer LVL N" completion message, consumed by the "RNG Meter - X Stored
 	// XP" message that immediately follows it - see checkSlayerCompletionMessages().
 	private String lastCompletedSlayerTypeName;
@@ -180,6 +184,11 @@ public class ScdClient implements ClientModInitializer {
 		// itself re-polls Hypixel for it (see server/src/server.js).
 		scheduler.scheduleAtFixedRate(this::refreshMayorPerks, 0, 10, TimeUnit.MINUTES);
 		ClientCommandRegistrationCallback.EVENT.register(this::registerCommands);
+
+		// Throwaway proof-of-concept adder for the entity-glow mixin - glows whatever's under the
+		// crosshair bright magenta while /scd debug glowtest is toggled on. Remove once confirmed live.
+		ScdGlowRegistry.register(entity -> glowTestActive && entity == Minecraft.getInstance().crosshairPickEntity
+				? 0xFFFF00FF : null);
 	}
 
 	/**
@@ -554,6 +563,17 @@ public class ScdClient implements ClientModInitializer {
 							runDebugReport(ctx.getSource());
 							return 1;
 						})
+						// Throwaway proof-of-concept for the entity-glow mixin - see
+						// ScdEntityRendererMixin/ScdGlowRegistry and FEATURE_ROADMAP.md's "T2/T3
+						// re-scoped" section. Delete alongside those once confirmed live.
+						.then(ClientCommands.literal("glowtest")
+								.executes(ctx -> {
+									glowTestActive = !glowTestActive;
+									ctx.getSource().sendFeedback(Component.literal(glowTestActive
+											? "Glow test ON - whatever's under your crosshair should glow bright magenta, even through walls."
+											: "Glow test OFF."));
+									return 1;
+								}))
 						.then(ClientCommands.literal("item")
 								.then(ClientCommands.literal("nbt")
 										.executes(ctx -> {
@@ -675,7 +695,7 @@ public class ScdClient implements ClientModInitializer {
 			config.devUnlocked = true;
 			config.save();
 			source.sendFeedback(Component.literal(
-					"Developer commands unlocked: /scd debug (item nbt), /scd slayer debug (nearby, scoreboard, menu dump), /scd carry debug."));
+					"Developer commands unlocked: /scd debug (glowtest, item nbt), /scd slayer debug (nearby, scoreboard, menu dump), /scd carry debug."));
 		} else {
 			source.sendFeedback(Component.literal("Incorrect code."));
 		}
