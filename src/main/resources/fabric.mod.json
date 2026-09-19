@@ -1,0 +1,23 @@
+{
+	"schemaVersion": 1,
+	"id": "scd",
+	"version": "${version}",
+	"name": "SCD",
+	"description": "Shows live Hypixel SkyBlock Bazaar prices and Slayer/Combat tracking in-game, backed by your own SCD server.",
+	"authors": [
+		"you"
+	],
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.scd.client.ScdClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.1.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
