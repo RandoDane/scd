@@ -103,26 +103,36 @@ public class ScdSlayerStatsHud {
 
 		int panelX = config.slayer.statsHudPosition.x;
 		int panelY = config.slayer.statsHudPosition.y;
+		float scale = config.slayer.statsHudPosition.scale;
 		int panelWidth = MIN_WIDTH;
 
-		// Pass 1: measure only, to get the exact height before drawing the background.
-		int panelHeight = layout(null, font, panelX, panelY, panelWidth, subtitle, heroText, grid, boostLine);
-		// Pass 2: background first, then the real content on top of it.
-		ScdTheme.panelRounded(graphics, panelX, panelY, panelWidth, panelHeight);
-		layout(graphics, font, panelX, panelY, panelWidth, subtitle, heroText, grid, boostLine);
+		// Pass 1: measure only (at native, unscaled size), to get the exact height before drawing.
+		int panelHeight = layout(null, font, panelWidth, subtitle, heroText, grid, boostLine);
 
-		return new ScdOverlayBox.Bounds(panelX, panelY, panelWidth, panelHeight);
+		// Drawn in local (0,0)-relative coordinates, wrapped in a single translate+scale transform, so
+		// the corner-drag resize handle in ScdHudEditScreen can grow/shrink the WHOLE box (panel, text,
+		// hero number, everything) uniformly around its pinned top-left position instead of needing
+		// every draw call in layout() to know about the scale individually.
+		var pose = graphics.pose();
+		pose.pushMatrix();
+		pose.translate(panelX, panelY);
+		pose.scale(scale, scale);
+		ScdTheme.panelRounded(graphics, 0, 0, panelWidth, panelHeight);
+		layout(graphics, font, panelWidth, subtitle, heroText, grid, boostLine);
+		pose.popMatrix();
+
+		return new ScdOverlayBox.Bounds(panelX, panelY, Math.round(panelWidth * scale), Math.round(panelHeight * scale));
 	}
 
-	/** graphics == null means measure only (return the final y, don't draw anything) - see renderContent's two-pass comment. */
-	private int layout(GuiGraphicsExtractor graphics, Font font, int panelX, int panelY, int panelWidth,
+	/** graphics == null means measure only (return the final y, don't draw anything) - see renderContent's two-pass comment. Always local-origin (0,0) - renderContent applies the position/scale transform around this. */
+	private int layout(GuiGraphicsExtractor graphics, Font font, int panelWidth,
 			String subtitle, String heroText, List<Stat> grid, String boostLine) {
-		int contentX = panelX + PADDING;
+		int contentX = PADDING;
 		int fieldWidth = panelWidth - PADDING * 2;
 		int columnWidth = (fieldWidth - COLUMN_GAP) / 2;
 		int lineH = ScdTheme.lineHeight(font);
 
-		int y = panelY + PADDING;
+		int y = PADDING;
 
 		if (graphics != null) graphics.text(font, Component.literal("Slayer Session"), contentX, y, ScdTheme.ACCENT_SLAYER, true);
 		y += font.lineHeight + 2;
@@ -160,7 +170,7 @@ public class ScdSlayerStatsHud {
 			y += lineH + 4;
 		}
 
-		return y - panelY + PADDING;
+		return y + PADDING;
 	}
 
 	/**

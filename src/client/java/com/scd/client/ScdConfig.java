@@ -16,6 +16,9 @@ public class ScdConfig {
 	public static class Pos {
 		public int x;
 		public int y;
+		// Uniform size multiplier for the whole box (text, panel, everything scales together) - set by
+		// dragging the corner handle in ScdHudEditScreen, 1.0 = the box's normal/native size.
+		public float scale = 1.0f;
 
 		public Pos(int x, int y) {
 			this.x = x;
