@@ -67,7 +67,7 @@ public class ScdSlayerStatsHud {
 			xpGained = 6_250;
 			xpBoostPercent = 25;
 			xpBoostMayor = "Aatrox";
-		} else if (stats.killCount() > 0) {
+		} else if (stats.killCount() > 0 && isLastActiveTypeInAllowedArea()) {
 			kills = stats.killCount();
 			avgMs = stats.averageKillMs();
 			perHour = stats.killsPerHour();
@@ -114,5 +114,16 @@ public class ScdSlayerStatsHud {
 		}
 
 		return new ScdOverlayBox.Bounds(x - PADDING, config.slayer.statsHudPosition.y, width, boxHeight);
+	}
+
+	/**
+	 * True for types with no location restriction, and for a restricted type (Enderman/Blaze/Spider)
+	 * only while still standing in its designated area - same check the boss tracker itself already
+	 * applies to `quest`, just re-run here against the last type tracked this session so the stats box
+	 * doesn't keep showing forever after wandering off (unlike `quest`, session stats never reset).
+	 */
+	private boolean isLastActiveTypeInAllowedArea() {
+		ScdSlayerType type = tracker.lastActiveTypeOrNull();
+		return type == null || ScdSlayerScoreboard.isInAllowedArea(type);
 	}
 }
