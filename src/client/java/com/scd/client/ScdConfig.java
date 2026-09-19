@@ -44,8 +44,13 @@ public class ScdConfig {
 	}
 
 	public static class Slayer {
+		// One combined, single-position box (boss/quest info + session stats stacked in the same
+		// panel, see ScdSlayerHud) - each section still independently toggleable via
+		// bossTrackerEnabled/statsHudEnabled below, the box just shrinks or disappears entirely
+		// depending on which are on. Defaults near the top since the combined box is taller than
+		// either half was alone and needs room to grow downward.
 		public boolean bossTrackerEnabled = true;
-		public Pos bossTrackerPosition = new Pos(8, 120);
+		public Pos bossTrackerPosition = new Pos(8, 8);
 
 		public boolean minibossAlertEnabled = true;
 
@@ -55,7 +60,6 @@ public class ScdConfig {
 		public boolean bossHighlightEnabled = true;
 
 		public boolean statsHudEnabled = true;
-		public Pos statsHudPosition = new Pos(8, 220);
 
 		// Per-type ability call-outs shown in the boss tracker box while that type's boss is up -
 		// split out so any one cue can be turned off individually instead of all-or-nothing.

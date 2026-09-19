@@ -1,37 +1,31 @@
 package com.scd.client;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
-
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 /**
- * A movable HUD box summarizing this session's Slayer kills: count, average
- * kill time, an extrapolated kills/hour rate, and total Slayer XP gained.
- * Purely derived from fights ScdSlayerBossTracker has actually observed -
- * not persisted, resets on game restart, and never shown until at least one
- * kill has happened (there's nothing meaningful to summarize before that).
+ * The session-stats SECTION of the combined Slayer HUD box (see ScdSlayerHud,
+ * which owns the actual panel/position/registration): count, average kill
+ * time, an extrapolated kills/hour rate, and total Slayer XP gained. Purely
+ * derived from fights ScdSlayerBossTracker has actually observed - not
+ * persisted, resets on game restart, and layoutSection() reports "nothing to
+ * show" (null) until at least one kill has happened this session.
  *
- * Redesigned (2026-09-19) around a "hero stat" pattern - a small caps label
- * over one big emphasized number for the single most useful stat
- * (kills/hour), with everything else in a two-column grid below - see
- * ScdTheme.panelRounded/heroNumber. Draws in two passes with the same
- * increment logic (measureOnly first to get the exact panel height, then
- * for real once the rounded background is in place) rather than tracking
- * height analytically by hand, so the layout can't silently drift out of
- * sync with what actually gets drawn.
+ * Hero-stat pattern (2026-09-19): a small caps label over one big emphasized
+ * number for the single most useful stat (kills/hour), with everything else
+ * in a two-column grid below - see ScdTheme.heroNumber. Originally this
+ * class owned its own rounded panel/position/HudElementRegistry
+ * registration as a second, separate floating box; merged into
+ * ScdSlayerHud's single combined box per explicit request instead of two
+ * boxes side by side.
  */
 public class ScdSlayerStatsHud {
-	private static final Identifier ID = Identifier.fromNamespaceAndPath("scd", "slayer_stats_overlay");
 	private static final int PADDING = 10;
-	private static final int MIN_WIDTH = 200;
 	private static final int COLUMN_GAP = 12;
 
 	private final ScdConfig config;
@@ -46,22 +40,18 @@ public class ScdSlayerStatsHud {
 		this.mayorPerks = mayorPerks;
 	}
 
-	public void register() {
-		HudElementRegistry.addLast(ID, (graphics, deltaTracker) -> ScdLog.guard("slayer stats HUD", () -> {
-			var quest = tracker.currentQuestOrNull();
-			if (quest != null) stats.setCurrentTier(quest.tier());
-			if (config.slayer.statsHudEnabled) renderContent(graphics, Minecraft.getInstance().font, false);
-		}));
-	}
-
-	public ScdOverlayBox.Bounds renderPreview(GuiGraphicsExtractor graphics, Font font) {
-		return renderContent(graphics, font, true);
-	}
-
 	private record Stat(String label, String value) {
 	}
 
-	private ScdOverlayBox.Bounds renderContent(GuiGraphicsExtractor graphics, Font font, boolean preview) {
+	/**
+	 * Draws this section at local (contentX=PADDING)-relative coordinates starting at startY, for
+	 * ScdSlayerHud to stack under its own boss/quest section. graphics == null means measure only
+	 * (used for ScdSlayerHud's own two-pass height calculation - see its class doc). Returns the y
+	 * position immediately after the last line drawn (no bottom padding - the caller/combined box
+	 * adds that once for the whole panel), or null if there's nothing to show at all (no kills yet
+	 * this session and not a preview).
+	 */
+	public Integer layoutSection(GuiGraphicsExtractor graphics, Font font, int panelWidth, int startY, boolean preview) {
 		int kills;
 		long avgMs;
 		double perHour;
@@ -90,7 +80,9 @@ public class ScdSlayerStatsHud {
 		}
 
 		String tier = preview ? "IV" : stats.currentTierOrNull();
-		String subtitle = tier != null ? "Tier " + tier : "No active quest";
+		// A section header rather than a repeat of the boss section's own title above it - this is
+		// what visually marks "the stats half starts here" when both sections are stacked together.
+		String sectionHeader = "Session Stats" + (tier != null ? " · Tier " + tier : "");
 		String heroText = String.format(Locale.ROOT, "%.1f", perHour);
 
 		List<Stat> grid = new ArrayList<>();
@@ -101,45 +93,15 @@ public class ScdSlayerStatsHud {
 		boolean showBoost = xpBoostPercent > 0 && xpBoostMayor != null;
 		String boostLine = showBoost ? String.format(Locale.ROOT, "+%.0f%% %s Slayer XP", xpBoostPercent, xpBoostMayor) : null;
 
-		int panelX = config.slayer.statsHudPosition.x;
-		int panelY = config.slayer.statsHudPosition.y;
-		float scale = config.slayer.statsHudPosition.scale;
-		int panelWidth = MIN_WIDTH;
-
-		// Pass 1: measure only (at native, unscaled size), to get the exact height before drawing.
-		int panelHeight = layout(null, font, panelWidth, subtitle, heroText, grid, boostLine);
-
-		// Drawn in local (0,0)-relative coordinates, wrapped in a single translate+scale transform, so
-		// the corner-drag resize handle in ScdHudEditScreen can grow/shrink the WHOLE box (panel, text,
-		// hero number, everything) uniformly around its pinned top-left position instead of needing
-		// every draw call in layout() to know about the scale individually.
-		var pose = graphics.pose();
-		pose.pushMatrix();
-		pose.translate(panelX, panelY);
-		pose.scale(scale, scale);
-		ScdTheme.panelRounded(graphics, 0, 0, panelWidth, panelHeight);
-		layout(graphics, font, panelWidth, subtitle, heroText, grid, boostLine);
-		pose.popMatrix();
-
-		return new ScdOverlayBox.Bounds(panelX, panelY, Math.round(panelWidth * scale), Math.round(panelHeight * scale));
-	}
-
-	/** graphics == null means measure only (return the final y, don't draw anything) - see renderContent's two-pass comment. Always local-origin (0,0) - renderContent applies the position/scale transform around this. */
-	private int layout(GuiGraphicsExtractor graphics, Font font, int panelWidth,
-			String subtitle, String heroText, List<Stat> grid, String boostLine) {
 		int contentX = PADDING;
 		int fieldWidth = panelWidth - PADDING * 2;
 		int columnWidth = (fieldWidth - COLUMN_GAP) / 2;
 		int lineH = ScdTheme.lineHeight(font);
 
-		int y = PADDING;
+		int y = startY;
 
-		if (graphics != null) graphics.text(font, Component.literal("Slayer Session"), contentX, y, ScdTheme.ACCENT_SLAYER, true);
-		y += font.lineHeight + 2;
-		if (graphics != null) ScdTheme.label(graphics, font, subtitle, contentX, y, ScdTheme.TEXT_SECONDARY);
-		y += lineH + 6;
-		if (graphics != null) ScdTheme.divider(graphics, contentX, y, fieldWidth);
-		y += 9;
+		if (graphics != null) ScdTheme.sectionLabel(graphics, font, sectionHeader, contentX, y);
+		y += lineH + 8;
 
 		if (graphics != null) ScdTheme.sectionLabel(graphics, font, "Kills / Hour", contentX, y);
 		y += lineH + 2;
@@ -170,14 +132,14 @@ public class ScdSlayerStatsHud {
 			y += lineH + 4;
 		}
 
-		return y + PADDING;
+		return y;
 	}
 
 	/**
 	 * True for types with no location restriction, and for a restricted type (Enderman/Blaze/Spider)
 	 * only while still standing in its designated area - same check the boss tracker itself already
-	 * applies to `quest`, just re-run here against the last type tracked this session so the stats box
-	 * doesn't keep showing forever after wandering off (unlike `quest`, session stats never reset).
+	 * applies to `quest`, just re-run here against the last type tracked this session so the stats
+	 * section doesn't keep showing forever after wandering off (unlike `quest`, session stats never reset).
 	 */
 	private boolean isLastActiveTypeInAllowedArea() {
 		ScdSlayerType type = tracker.lastActiveTypeOrNull();

@@ -57,11 +57,6 @@ public class ScdSlayerConfigScreen extends Screen {
 				ScdTheme.ACCENT_SLAYER, config.slayer.bossTrackerEnabled, v -> config.slayer.bossTrackerEnabled = v));
 		y += 18;
 
-		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16, Component.literal("Move boss tracker box..."), ScdTheme.ACCENT_SLAYER, () ->
-				Minecraft.getInstance().setScreen(new ScdHudEditScreen(this, config, config.slayer.bossTrackerPosition, ScdTheme.ACCENT_SLAYER,
-						(g, f) -> client.slayerHud().renderPreview(g, f)))));
-		y += 22;
-
 		minibossLabelY = y + 3;
 		addRenderableWidget(new ScdToggle(contentX + fieldWidth - 26, y, Component.literal("Miniboss alerts"),
 				ScdTheme.ACCENT_SLAYER, config.slayer.minibossAlertEnabled, v -> config.slayer.minibossAlertEnabled = v));
@@ -70,16 +65,17 @@ public class ScdSlayerConfigScreen extends Screen {
 		bossHighlightLabelY = y + 3;
 		addRenderableWidget(new ScdToggle(contentX + fieldWidth - 26, y, Component.literal("Highlight boss"),
 				ScdTheme.ACCENT_SLAYER, config.slayer.bossHighlightEnabled, v -> config.slayer.bossHighlightEnabled = v));
-		y += 24;
+		y += 18;
 
 		statsLabelY = y + 3;
 		addRenderableWidget(new ScdToggle(contentX + fieldWidth - 26, y, Component.literal("Session stats"),
 				ScdTheme.ACCENT_SLAYER, config.slayer.statsHudEnabled, v -> config.slayer.statsHudEnabled = v));
-		y += 18;
+		y += 24;
 
-		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16, Component.literal("Move stats box..."), ScdTheme.ACCENT_SLAYER, () ->
-				Minecraft.getInstance().setScreen(new ScdHudEditScreen(this, config, config.slayer.statsHudPosition, ScdTheme.ACCENT_SLAYER,
-						(g, f) -> client.slayerStatsHud().renderPreview(g, f)))));
+		// One combined box now (boss/quest info + session stats stacked together) - see ScdSlayerHud.
+		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16, Component.literal("Move Slayer HUD..."), ScdTheme.ACCENT_SLAYER, () ->
+				Minecraft.getInstance().setScreen(new ScdHudEditScreen(this, config, config.slayer.bossTrackerPosition, ScdTheme.ACCENT_SLAYER,
+						(g, f) -> client.slayerHud().renderPreview(g, f)))));
 		y += 22;
 
 		int activeCarries = client.carryQueue().activeCount();

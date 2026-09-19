@@ -82,10 +82,9 @@ public class ScdClient implements ClientModInitializer {
 		slayerMenuWatcher = new ScdSlayerMenuWatcher(slayerRngMeter);
 		slayerDrops = ScdSlayerDrops.load();
 		carryQueue = ScdCarryQueue.load();
-		slayerHud = new ScdSlayerHud(config, slayerTracker, slayerRecords, slayerRngMeter, slayerDrops);
-		slayerHud.register();
 		slayerStatsHud = new ScdSlayerStatsHud(config, slayerSessionStats, slayerTracker, mayorPerks);
-		slayerStatsHud.register();
+		slayerHud = new ScdSlayerHud(config, slayerTracker, slayerRecords, slayerRngMeter, slayerDrops, slayerStatsHud);
+		slayerHud.register();
 		slayerTracker.setListener(new ScdSlayerBossTracker.Listener() {
 			@Override
 			public void onBossSpawned(ScdSlayerQuest quest) {
@@ -255,10 +254,6 @@ public class ScdClient implements ClientModInitializer {
 
 	public ScdSlayerHud slayerHud() {
 		return slayerHud;
-	}
-
-	public ScdSlayerStatsHud slayerStatsHud() {
-		return slayerStatsHud;
 	}
 
 	public ScdQuiverHud quiverHud() {
