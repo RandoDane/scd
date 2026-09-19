@@ -154,6 +154,11 @@ public class ScdClient implements ClientModInitializer {
 		net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry.addLast(
 				net.minecraft.resources.Identifier.fromNamespaceAndPath("scd", "inventory_watch_ticker"),
 				(graphics, deltaTracker) -> ScdLog.guard("inventory watch", () -> inventoryWatcher.tick(attributeShards)));
+		// Same reliable-ticking trick, for the Slayer boss world-space highlight (ScdGizmoUtil calls
+		// need to happen every frame to keep showing - see ScdGizmoUtil's own class doc).
+		net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry.addLast(
+				net.minecraft.resources.Identifier.fromNamespaceAndPath("scd", "slayer_boss_highlight_ticker"),
+				(graphics, deltaTracker) -> ScdLog.guard("slayer boss highlight", this::renderBossHighlight));
 		ClientReceiveMessageEvents.GAME.register((message, overlay) -> ScdLog.guard("slayer chat watch", () -> {
 			logSlayerChatLines(message);
 			checkCocoonMessage(message);
@@ -197,6 +202,23 @@ public class ScdClient implements ClientModInitializer {
 		// simpler crosshair version is both sufficient and correct - no classifier needed.
 		ScdGlowRegistry.register(entity -> glowTestActive && entity == Minecraft.getInstance().crosshairPickEntity
 				? 0xFFFF00FF : null);
+
+		// First real T2/T3 feature: glow the currently-tracked Slayer boss and draw a line to it -
+		// entirely reuses the already-proven boss detection (ScdSlayerBossTracker.currentBossOrNull),
+		// no new detection needed. The line half is rendered every frame in renderBossHighlight()
+		// (see the HudElementRegistry registration above); the glow half only needs registering once
+		// since the adder itself re-checks the live tracked boss on every call.
+		ScdGlowRegistry.register(entity -> config.slayer.bossHighlightEnabled && entity == slayerTracker.currentBossOrNull()
+				? ScdTheme.ACCENT_SLAYER : null);
+	}
+
+	/** Draws a line from the player to the currently-tracked Slayer boss, through walls - see the registered ScdGlowRegistry adder above for the matching glow half. */
+	private void renderBossHighlight() {
+		if (!config.slayer.bossHighlightEnabled) return;
+		var boss = slayerTracker.currentBossOrNull();
+		var player = Minecraft.getInstance().player;
+		if (boss == null || player == null) return;
+		ScdGizmoUtil.lineToEntity(player.getEyePosition(), boss, ScdTheme.ACCENT_SLAYER, true);
 	}
 
 	/**
