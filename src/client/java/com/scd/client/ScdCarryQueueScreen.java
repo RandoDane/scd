@@ -73,13 +73,13 @@ public class ScdCarryQueueScreen extends Screen {
 				if (entry.isActive()) {
 					addRenderableWidget(new ScdButton(bx, y, 20, ROW_HEIGHT - 2, Component.literal("Done"), ScdTheme.ACCENT_SLAYER, () -> {
 						client.carryQueue().markComplete(entry.id);
-						init();
+						rebuildWidgets();
 					}));
 					bx += 22;
 				}
 				addRenderableWidget(new ScdButton(bx, y, 16, ROW_HEIGHT - 2, Component.literal("x"), ScdTheme.ACCENT_SLAYER, () -> {
 					client.carryQueue().remove(entry.id);
-					init();
+					rebuildWidgets();
 				}));
 				y += ROW_HEIGHT;
 			}
@@ -93,13 +93,13 @@ public class ScdCarryQueueScreen extends Screen {
 			addRenderableWidget(new ScdButton(contentX, y, navWidth, 16, Component.literal("< Prev"), ScdTheme.ACCENT_SLAYER, () -> {
 				if (page > 0) {
 					page--;
-					init();
+					rebuildWidgets();
 				}
 			}));
 			addRenderableWidget(new ScdButton(contentX + navWidth + 8, y, navWidth, 16, Component.literal("Next >"), ScdTheme.ACCENT_SLAYER, () -> {
 				if (page < finalPageCount - 1) {
 					page++;
-					init();
+					rebuildWidgets();
 				}
 			}));
 			y += 22;

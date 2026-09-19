@@ -72,13 +72,13 @@ public class ScdCarryPlayerPickerScreen extends Screen {
 			addRenderableWidget(new ScdButton(contentX, y, navWidth, 16, Component.literal("< Prev"), ScdTheme.ACCENT_SLAYER, () -> {
 				if (page > 0) {
 					page--;
-					init();
+					rebuildWidgets();
 				}
 			}));
 			addRenderableWidget(new ScdButton(contentX + navWidth + 8, y, navWidth, 16, Component.literal("Next >"), ScdTheme.ACCENT_SLAYER, () -> {
 				if (page < finalPageCount - 1) {
 					page++;
-					init();
+					rebuildWidgets();
 				}
 			}));
 			y += 22;
