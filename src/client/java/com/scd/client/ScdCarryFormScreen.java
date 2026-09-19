@@ -30,6 +30,12 @@ public class ScdCarryFormScreen extends Screen {
 
 	private int typeIndex;
 	private int tierIndex;
+	// setScreen() re-runs init() every time a screen becomes active again (even the same instance,
+	// e.g. returning from the player picker), which rebuilds a fresh EditBox from scratch - these
+	// survive that rebuild so a chosen name (or anything already typed) isn't silently wiped.
+	private String playerNameDraft = "";
+	private String pricePerKillDraft = "";
+	private String bossCountDraft = "";
 	private EditBox playerNameBox;
 	private EditBox pricePerKillBox;
 	private EditBox bossCountBox;
@@ -76,6 +82,8 @@ public class ScdCarryFormScreen extends Screen {
 		playerNameBox.setBordered(false);
 		playerNameBox.setTextColor(ScdTheme.TEXT_PRIMARY);
 		playerNameBox.setHint(Component.literal("Player name"));
+		playerNameBox.setValue(playerNameDraft);
+		playerNameBox.setResponder(s -> playerNameDraft = s);
 		addRenderableWidget(playerNameBox);
 		y += 20;
 
@@ -103,7 +111,11 @@ public class ScdCarryFormScreen extends Screen {
 		pricePerKillBox.setBordered(false);
 		pricePerKillBox.setTextColor(ScdTheme.TEXT_PRIMARY);
 		pricePerKillBox.setHint(Component.literal("Price per kill"));
-		pricePerKillBox.setResponder(s -> restrictToDigits(pricePerKillBox, s));
+		pricePerKillBox.setValue(pricePerKillDraft);
+		pricePerKillBox.setResponder(s -> {
+			restrictToDigits(pricePerKillBox, s);
+			pricePerKillDraft = pricePerKillBox.getValue();
+		});
 		addRenderableWidget(pricePerKillBox);
 		y += 20;
 
@@ -113,7 +125,11 @@ public class ScdCarryFormScreen extends Screen {
 		bossCountBox.setBordered(false);
 		bossCountBox.setTextColor(ScdTheme.TEXT_PRIMARY);
 		bossCountBox.setHint(Component.literal("Amount of bosses"));
-		bossCountBox.setResponder(s -> restrictToDigits(bossCountBox, s));
+		bossCountBox.setValue(bossCountDraft);
+		bossCountBox.setResponder(s -> {
+			restrictToDigits(bossCountBox, s);
+			bossCountDraft = bossCountBox.getValue();
+		});
 		addRenderableWidget(bossCountBox);
 		y += 20;
 
@@ -136,9 +152,10 @@ public class ScdCarryFormScreen extends Screen {
 		panelHeight = y + PADDING - panelY;
 	}
 
-	/** Called by ScdCarryPlayerPickerScreen when a row is clicked. */
+	/** Called by ScdCarryPlayerPickerScreen when a row is clicked - stores into the draft (survives the init() that setScreen() re-runs) as well as the live box. */
 	public void setPlayerName(String name) {
-		playerNameBox.setValue(name);
+		playerNameDraft = name;
+		if (playerNameBox != null) playerNameBox.setValue(name);
 	}
 
 	private void onAddPressed() {

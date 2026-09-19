@@ -223,13 +223,20 @@ public class ScdClient implements ClientModInitializer {
 		return carryQueue;
 	}
 
-	/** Every other player currently on the tab list (i.e. actually on this server right now) - used to pick/validate carry player names instead of trusting freehand typing. */
+	// A real Minecraft/Hypixel account name is always 1-16 chars of [A-Za-z0-9_] - Hypixel's tab list
+	// also carries a bunch of fake, non-player entries purely for scoreboard-team sort/spacing tricks
+	// (seen live as "!A-a", "!A-b", ... filling several pages before any real name), which all fail
+	// this pattern since real usernames can never contain "!" or "-".
+	private static final java.util.regex.Pattern VALID_IGN = java.util.regex.Pattern.compile("^\\w{1,16}$");
+
+	/** Every other real player currently on the tab list (i.e. actually on this server right now) - used to pick/validate carry player names instead of trusting freehand typing. */
 	public List<String> onlinePlayerNames() {
 		var player = Minecraft.getInstance().player;
 		if (player == null || player.connection == null) return List.of();
 		String ownName = player.getGameProfile().name();
 		return player.connection.getListedOnlinePlayers().stream()
 				.map(info -> info.getProfile().name())
+				.filter(name -> VALID_IGN.matcher(name).matches())
 				.filter(name -> !name.equalsIgnoreCase(ownName))
 				.sorted(String.CASE_INSENSITIVE_ORDER)
 				.toList();

@@ -69,7 +69,7 @@ public class ScdSlayerDropsScreen extends Screen {
 				rowLabels.add(new RowLabel(entry.displayName() + ": " + ScdFormat.compactCount(entry.count()), y + 3));
 				addRenderableWidget(new ScdButton(contentX + rowWidth + 6, y, 16, ROW_HEIGHT - 2, Component.literal("x"), ScdTheme.ACCENT_SLAYER, () -> {
 					client.slayerDrops().remove(type, entry.itemId());
-					init();
+					rebuildWidgets();
 				}));
 				y += ROW_HEIGHT;
 			}
@@ -83,13 +83,13 @@ public class ScdSlayerDropsScreen extends Screen {
 			addRenderableWidget(new ScdButton(contentX, y, navWidth, 16, Component.literal("< Prev"), ScdTheme.ACCENT_SLAYER, () -> {
 				if (page > 0) {
 					page--;
-					init();
+					rebuildWidgets();
 				}
 			}));
 			addRenderableWidget(new ScdButton(contentX + navWidth + 8, y, navWidth, 16, Component.literal("Next >"), ScdTheme.ACCENT_SLAYER, () -> {
 				if (page < finalPageCount - 1) {
 					page++;
-					init();
+					rebuildWidgets();
 				}
 			}));
 			y += 22;
@@ -100,7 +100,7 @@ public class ScdSlayerDropsScreen extends Screen {
 		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16, Component.literal("Clear all"), ScdTheme.ACCENT_SLAYER, () -> {
 			client.slayerDrops().clear(type);
 			page = 0;
-			init();
+			rebuildWidgets();
 		}));
 		y += 22;
 
