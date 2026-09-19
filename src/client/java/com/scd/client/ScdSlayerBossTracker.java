@@ -92,6 +92,10 @@ public class ScdSlayerBossTracker {
 	private Float lastHpFrac;
 	private boolean lastNameWasConjoinedBrood;
 	private ScdSlayerType lastEndedType;
+	// Unlike `quest`, never cleared just because the current type's area check fails - lets the
+	// session stats HUD tell "left the designated area for a restricted type" apart from "never
+	// tracked anything this session" without needing its own type-keyed bookkeeping.
+	private ScdSlayerType lastActiveType;
 	private long killedDisplayUntilMs;
 	private long lootAttributionUntilMs;
 	// Hunting-phase timing: quest accepted to boss spawned, paused whenever nothing nearby has taken
@@ -143,6 +147,7 @@ public class ScdSlayerBossTracker {
 		if (quest != null && !ScdSlayerScoreboard.isInAllowedArea(quest.type())) {
 			quest = null;
 		}
+		if (quest != null) lastActiveType = quest.type();
 
 		if (previousQuest == null && quest != null) {
 			// Hunt-phase clock starts the moment the quest itself becomes active on the scoreboard,
@@ -380,6 +385,11 @@ public class ScdSlayerBossTracker {
 
 	public ScdSlayerQuest currentQuestOrNull() {
 		return quest;
+	}
+
+	/** The last type with a genuinely active (in-area) quest this session, or null before the first one. */
+	public ScdSlayerType lastActiveTypeOrNull() {
+		return lastActiveType;
 	}
 
 	/** The type whose fight just ended, if still within the "Killed" display window - for the HUD box's own brief post-kill flash (see ScdSlayerHud), same window as the config screen's badge. */
