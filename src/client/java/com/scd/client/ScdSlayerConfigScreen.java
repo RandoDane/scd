@@ -75,6 +75,13 @@ public class ScdSlayerConfigScreen extends Screen {
 		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16, Component.literal("Move stats box..."), ScdTheme.ACCENT_SLAYER, () ->
 				Minecraft.getInstance().setScreen(new ScdHudEditScreen(this, config, config.slayer.statsHudPosition, ScdTheme.ACCENT_SLAYER,
 						(g, f) -> client.slayerStatsHud().renderPreview(g, f)))));
+		y += 22;
+
+		int activeCarries = client.carryQueue().activeCount();
+		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16,
+				Component.literal(activeCarries > 0 ? "Carries (" + activeCarries + " active)..." : "Carries..."),
+				ScdTheme.ACCENT_SLAYER, () ->
+						Minecraft.getInstance().setScreen(new ScdCarryQueueScreen(this, client))));
 		y += 26;
 
 		for (ScdSlayerType type : ScdSlayerType.values()) {
