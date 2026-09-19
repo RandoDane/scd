@@ -190,7 +190,7 @@ public class ScdSlayerConfigScreen extends Screen {
 
 		ScdTheme.label(g, this.font, "Show tracker while fighting a boss", panelX + PADDING, trackerLabelY, ScdTheme.TEXT_SECONDARY);
 		ScdTheme.label(g, this.font, "Chat alert when a miniboss spawns", panelX + PADDING, minibossLabelY, ScdTheme.TEXT_SECONDARY);
-		ScdTheme.label(g, this.font, "Glow + line to the tracked boss, through walls", panelX + PADDING, bossHighlightLabelY, ScdTheme.TEXT_SECONDARY);
+		ScdTheme.label(g, this.font, "Glow, line + box on the tracked boss, through walls", panelX + PADDING, bossHighlightLabelY, ScdTheme.TEXT_SECONDARY);
 		ScdTheme.label(g, this.font, "Session kill-count / avg time HUD", panelX + PADDING, statsLabelY, ScdTheme.TEXT_SECONDARY);
 
 		for (LabelRow row : labelRows) {
