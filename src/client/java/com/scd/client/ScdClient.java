@@ -579,6 +579,15 @@ public class ScdClient implements ClientModInitializer {
 											: "Glow test OFF."));
 									return 1;
 								}))
+						// Diagnostic for "which armor stand is which" - dumps every nearby armor
+						// stand's actual client-visible flags, since guessing which combination
+						// (isInvisible/isMarker/isSmall) separates an NPC's real body from its
+						// name-tag-holder stand turned out to be wrong on the first try.
+						.then(ClientCommands.literal("armorstands")
+								.executes(ctx -> {
+									reportNearbyArmorStands(ctx.getSource());
+									return 1;
+								}))
 						.then(ClientCommands.literal("item")
 								.then(ClientCommands.literal("nbt")
 										.executes(ctx -> {
@@ -918,6 +927,49 @@ public class ScdClient implements ClientModInitializer {
 		ScdLog.info("=== /scd slayer debug nearby ===");
 		for (String line : lines) {
 			ScdLog.info(line);
+		}
+	}
+
+	/**
+	 * Diagnostic for "which armor stand is which" - Hypixel NPCs turned out to
+	 * be built from an armor stand for the visible body plus a SEPARATE one
+	 * just to hold the floating name tag, and guessing which client-visible
+	 * flag combination tells them apart (isInvisible/isMarker) was wrong on
+	 * the first try. Dumps every nearby armor stand's actual flags so the
+	 * real distinguishing signal can be read off directly instead of guessed.
+	 */
+	private void reportNearbyArmorStands(FabricClientCommandSource source) {
+		var mc = Minecraft.getInstance();
+		if (mc.level == null || mc.player == null) {
+			source.sendFeedback(Component.literal("No level/player loaded"));
+			return;
+		}
+
+		record Row(double distance, String text) {
+		}
+		List<Row> rows = new java.util.ArrayList<>();
+		for (net.minecraft.world.entity.Entity entity : mc.level.entitiesForRendering()) {
+			if (!(entity instanceof net.minecraft.world.entity.decoration.ArmorStand stand)) continue;
+			double dist = stand.distanceTo(mc.player);
+			if (dist > 16.0) continue;
+
+			String name = stand.hasCustomName() && stand.getCustomName() != null ? stand.getCustomName().getString() : "(none)";
+			String text = String.format(java.util.Locale.ROOT,
+					"%.1fm name=\"%s\" invisible=%s marker=%s small=%s showArms=%s showBasePlate=%s pos=%s",
+					dist, name, stand.isInvisible(), stand.isMarker(), stand.isSmall(), stand.showArms(), stand.showBasePlate(),
+					stand.position());
+			rows.add(new Row(dist, text));
+		}
+		rows.sort(java.util.Comparator.comparingDouble(Row::distance));
+
+		source.sendFeedback(Component.literal("=== Nearby armor stands (" + rows.size() + ") ==="));
+		if (rows.isEmpty()) {
+			source.sendFeedback(Component.literal("None within 16 blocks."));
+		}
+		ScdLog.info("=== /scd debug armorstands ===");
+		for (Row row : rows) {
+			source.sendFeedback(Component.literal(row.text()));
+			ScdLog.info(row.text());
 		}
 	}
 
