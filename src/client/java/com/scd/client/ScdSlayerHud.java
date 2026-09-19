@@ -15,20 +15,27 @@ import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * A movable HUD box that appears whenever a Slayer boss is nearby, showing
- * its name, how long the fight has run, and a health-percentage bar.
+ * The combined, single-position Slayer HUD box: boss/quest info stacked
+ * above session stats (ScdSlayerStatsHud provides that half's content) in
+ * one rounded panel, sharing one position/size. Originally two independent
+ * floating boxes; merged per explicit request instead of stacking two
+ * separate panels. Each half is still independently toggleable
+ * (bossTrackerEnabled/statsHudEnabled) - the box shrinks to whichever
+ * half(s) are on, or disappears entirely if both are off.
+ *
+ * Two-pass layout throughout (graphics == null means measure only), same
+ * reasoning as ScdSlayerStatsHud: the exact height has to be known before
+ * the rounded panel background can be drawn, and re-running the identical
+ * draw logic for the measure pass means the two can never drift out of sync.
  */
 public class ScdSlayerHud {
 	private static final Identifier ID = Identifier.fromNamespaceAndPath("scd", "slayer_boss_overlay");
-	private static final int BG_COLOR = 0x90000000;
 	private static final int BAR_BG_COLOR = 0x60000000;
 	private static final int BAR_COLOR = 0xFFFF5555;
-	private static final int TITLE_COLOR = 0xFFFFAA00;
-	private static final int LABEL_COLOR = 0xFFAAAAAA;
 	private static final int WARNING_COLOR = 0xFFFF8855;
 	private static final int INFO_COLOR = 0xFF55DDAA;
-	private static final int PADDING = 4;
-	private static final int MIN_WIDTH = 150;
+	private static final int PADDING = 10;
+	private static final int PANEL_WIDTH = 210;
 	private static final int BAR_HEIGHT = 6;
 
 	private final ScdConfig config;
@@ -36,17 +43,19 @@ public class ScdSlayerHud {
 	private final ScdSlayerRecords records;
 	private final ScdSlayerRngMeter rngMeter;
 	private final ScdSlayerDrops drops;
+	private final ScdSlayerStatsHud statsHud;
 	// Proves whether the HUD callback is even being invoked at all, independent of whatever it then
 	// does - so /scd slayer debug can tell "never called" apart from "called but throwing/blank".
 	private final AtomicLong renderCallCount = new AtomicLong();
 
 	public ScdSlayerHud(ScdConfig config, ScdSlayerBossTracker tracker, ScdSlayerRecords records,
-			ScdSlayerRngMeter rngMeter, ScdSlayerDrops drops) {
+			ScdSlayerRngMeter rngMeter, ScdSlayerDrops drops, ScdSlayerStatsHud statsHud) {
 		this.config = config;
 		this.tracker = tracker;
 		this.records = records;
 		this.rngMeter = rngMeter;
 		this.drops = drops;
+		this.statsHud = statsHud;
 	}
 
 	public void register() {
@@ -59,7 +68,7 @@ public class ScdSlayerHud {
 			renderCallCount.incrementAndGet();
 			ScdLog.guard("slayer HUD", () -> {
 				tracker.tick();
-				if (config.slayer.bossTrackerEnabled) renderContent(graphics, Minecraft.getInstance().font, false);
+				renderContent(graphics, Minecraft.getInstance().font, false);
 			});
 		});
 	}
@@ -73,6 +82,69 @@ public class ScdSlayerHud {
 	}
 
 	private ScdOverlayBox.Bounds renderContent(GuiGraphicsExtractor graphics, Font font, boolean preview) {
+		boolean showBoss = config.slayer.bossTrackerEnabled;
+		boolean showStats = config.slayer.statsHudEnabled;
+		if (!showBoss && !showStats) return null;
+
+		// Pass 1: measure only, to get the exact height before drawing the rounded background.
+		Integer height = layoutCombined(null, font, showBoss, showStats, preview);
+		if (height == null) return null;
+
+		int panelX = config.slayer.bossTrackerPosition.x;
+		int panelY = config.slayer.bossTrackerPosition.y;
+		float scale = config.slayer.bossTrackerPosition.scale;
+
+		// Drawn in local (0,0)-relative coordinates, wrapped in a single translate+scale transform -
+		// try/finally so an exception partway through can never leave the pose stack unbalanced for
+		// the rest of the frame's rendering (every other HUD element sharing it would inherit the
+		// leftover transform otherwise).
+		var pose = graphics.pose();
+		pose.pushMatrix();
+		try {
+			pose.translate(panelX, panelY);
+			pose.scale(scale, scale);
+			ScdTheme.panelRounded(graphics, 0, 0, PANEL_WIDTH, height);
+			layoutCombined(graphics, font, showBoss, showStats, preview);
+		} finally {
+			pose.popMatrix();
+		}
+
+		return new ScdOverlayBox.Bounds(panelX, panelY, Math.round(PANEL_WIDTH * scale), Math.round(height * scale));
+	}
+
+	/** graphics == null means measure only. Returns null if neither half has anything to show right now. */
+	private Integer layoutCombined(GuiGraphicsExtractor graphics, Font font, boolean showBoss, boolean showStats, boolean preview) {
+		int y = PADDING;
+		boolean drewBoss = false;
+		if (showBoss) {
+			Integer afterBoss = layoutBossSection(graphics, font, y, preview);
+			if (afterBoss != null) {
+				y = afterBoss;
+				drewBoss = true;
+			}
+		}
+		boolean drewStats = false;
+		if (showStats) {
+			// Peek measure-only first, so the divider below is only ever drawn when the stats section
+			// really does have something following it - otherwise a stats-has-nothing-yet frame would
+			// leave a dangling divider line with nothing under it.
+			Integer wouldShow = statsHud.layoutSection(null, font, PANEL_WIDTH, y, preview);
+			if (wouldShow != null) {
+				if (drewBoss) {
+					y += 6;
+					if (graphics != null) ScdTheme.divider(graphics, PADDING, y, PANEL_WIDTH - PADDING * 2);
+					y += 9;
+				}
+				y = statsHud.layoutSection(graphics, font, PANEL_WIDTH, y, preview);
+				drewStats = true;
+			}
+		}
+		if (!drewBoss && !drewStats) return null;
+		return y + PADDING;
+	}
+
+	/** graphics == null means measure only. Returns null if there's nothing boss/quest-related to show right now. */
+	private Integer layoutBossSection(GuiGraphicsExtractor graphics, Font font, int startY, boolean preview) {
 		LivingEntity boss = preview ? null : tracker.currentBossOrNull();
 		ScdSlayerQuest quest = preview ? null : tracker.currentQuestOrNull();
 
@@ -130,40 +202,31 @@ public class ScdSlayerHud {
 			return null;
 		}
 
-		int textWidth = font.width(title);
-		textWidth = Math.max(textWidth, font.width(line2));
-		for (String extraLine : extraLines) {
-			textWidth = Math.max(textWidth, font.width(extraLine));
-		}
-		int width = Math.max(MIN_WIDTH, textWidth + PADDING * 2);
+		int contentX = PADDING;
+		int fieldWidth = PANEL_WIDTH - PADDING * 2;
+		int lineH = ScdTheme.lineHeight(font);
+		int y = startY;
 
-		int x = config.slayer.bossTrackerPosition.x + PADDING;
-		int y = config.slayer.bossTrackerPosition.y + PADDING;
-		int lineHeight = font.lineHeight + 2;
+		if (graphics != null) graphics.text(font, Component.literal(title), contentX, y, ScdTheme.ACCENT_SLAYER, true);
+		y += font.lineHeight + 2;
 
-		int textLines = 2 + extraLines.size();
-		int boxHeight = PADDING * 2 + lineHeight * textLines + (healthFrac != null ? 2 + BAR_HEIGHT : 0);
-		graphics.fill(x - PADDING, y - PADDING, x - PADDING + width, y - PADDING + boxHeight, BG_COLOR);
-
-		graphics.text(font, Component.literal(title), x, y, TITLE_COLOR, true);
-		y += lineHeight;
-
-		graphics.text(font, Component.literal(line2), x, y, LABEL_COLOR, true);
-		y += lineHeight;
+		if (graphics != null) ScdTheme.label(graphics, font, line2, contentX, y, ScdTheme.TEXT_SECONDARY);
+		y += lineH + 2;
 
 		for (String extraLine : extraLines) {
-			graphics.text(font, Component.literal(extraLine), x, y, extraLinesColor, true);
-			y += lineHeight;
+			if (graphics != null) ScdTheme.label(graphics, font, extraLine, contentX, y, extraLinesColor);
+			y += lineH + 2;
 		}
 
 		if (healthFrac != null) {
-			y += 2;
-			int barWidth = width - PADDING * 2;
-			graphics.fill(x, y, x + barWidth, y + BAR_HEIGHT, BAR_BG_COLOR);
-			graphics.fill(x, y, x + Math.round(barWidth * healthFrac), y + BAR_HEIGHT, BAR_COLOR);
+			if (graphics != null) {
+				graphics.fill(contentX, y, contentX + fieldWidth, y + BAR_HEIGHT, BAR_BG_COLOR);
+				graphics.fill(contentX, y, contentX + Math.round(fieldWidth * healthFrac), y + BAR_HEIGHT, BAR_COLOR);
+			}
+			y += BAR_HEIGHT + 4;
 		}
 
-		return new ScdOverlayBox.Bounds(x - PADDING, config.slayer.bossTrackerPosition.y, width, boxHeight);
+		return y;
 	}
 
 	private List<String> huntingInfoLines(ScdSlayerQuest quest) {

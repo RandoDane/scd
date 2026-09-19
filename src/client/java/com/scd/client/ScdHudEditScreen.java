@@ -78,7 +78,10 @@ public class ScdHudEditScreen extends Screen {
 		if (drawn == null) {
 			ScdTheme.label(graphics, this.font, "(no data yet to preview)", position.x + 4, position.y + 4, ScdTheme.TEXT_SECONDARY);
 		}
-		graphics.outline(bounds.x(), bounds.y(), bounds.width(), bounds.height(), accentColor);
+		// No standalone selection outline here anymore - drawing a sharp rectangle on top of a
+		// rounded-panel box (see ScdTheme.panelRounded) looked exactly wrong, poking out past the
+		// actual rounded corners. The panel's own texture already has a visible border baked in, and
+		// the resize handle below is enough affordance for "this is the draggable box."
 
 		int hx = bounds.x() + bounds.width();
 		int hy = bounds.y() + bounds.height();
