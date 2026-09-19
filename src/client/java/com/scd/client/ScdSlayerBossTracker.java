@@ -51,6 +51,11 @@ public class ScdSlayerBossTracker {
 	// per-Slayer list after its fight ends, before that type just goes back to showing nothing.
 	private static final long KILLED_DISPLAY_WINDOW_MS = 5_000;
 
+	// How long a Spider quest's "boss not spawned" scoreboard reading is tolerated before it's
+	// trusted as a genuine kill - covers the Tarantula Broodfather -> Conjoined Brood transition
+	// animation, confirmed live to make Hypixel's own sidebar blip "Slay the boss!" away briefly.
+	private static final long SPIDER_PHASE_TRANSITION_GRACE_MS = 3_000;
+
 	// Separate, much longer window used only for drop attribution (not the UI flash above) - the kill
 	// itself ends the quest instantly, but a boss's own drop isn't always delivered instantly the way
 	// Telekinesis delivers common loot, so this needs to comfortably cover walking back for a drop
@@ -98,6 +103,8 @@ public class ScdSlayerBossTracker {
 	private ScdSlayerType lastActiveType;
 	private long killedDisplayUntilMs;
 	private long lootAttributionUntilMs;
+	// 0 = not currently missing. See SPIDER_PHASE_TRANSITION_GRACE_MS/tick() for what this debounces.
+	private long spiderBossMissingSinceMs;
 	// Hunting-phase timing: quest accepted to boss spawned, paused whenever nothing nearby has taken
 	// damage for HUNT_PAUSE_THRESHOLD_MS. Tracked separately from the boss fight itself.
 	private long huntStartMs;
@@ -151,12 +158,28 @@ public class ScdSlayerBossTracker {
 		// Tarantula Broodfather -> Conjoined Brood: confirmed live that Hypixel's own sidebar
 		// momentarily drops "Slay the boss!" the instant Broodfather's own HP bar hits zero, even
 		// though the fight continues under the new Conjoined Brood entity - taken at face value, that
-		// blip looked exactly like a real kill (premature "boss down" chat message + kill recorded).
-		// Cross-checking for a live Conjoined Brood entity nearby overrides the scoreboard's momentary
-		// word and keeps the same fight/timer running instead of ending and immediately "respawning" it.
-		if (previousQuest != null && previousQuest.type() == ScdSlayerType.SPIDER && previousQuest.bossSpawned()
-				&& (quest == null || !quest.bossSpawned()) && spiderSecondPhaseStillActive(mc)) {
-			quest = new ScdSlayerQuest(previousQuest.type(), previousQuest.tier(), true);
+		// blip looked exactly like a real kill (premature "boss down" chat message + kill recorded at
+		// the wrong, much shorter elapsed time). First attempt checked for a live Conjoined Brood
+		// entity at the exact instant the scoreboard blips - confirmed live that this still wasn't
+		// enough, since the new entity apparently hasn't spawned into the world yet at that same tick.
+		// A short grace window instead of an immediate same-tick check covers the real gap regardless
+		// of exactly when the new entity appears.
+		boolean spiderPhasePending = previousQuest != null && previousQuest.type() == ScdSlayerType.SPIDER && previousQuest.bossSpawned();
+		if (spiderPhasePending) {
+			boolean scoreboardStillSpawned = quest != null && quest.bossSpawned();
+			if (scoreboardStillSpawned) {
+				spiderBossMissingSinceMs = 0;
+			} else {
+				long now = System.currentTimeMillis();
+				if (spiderBossMissingSinceMs == 0) spiderBossMissingSinceMs = now;
+				if (now - spiderBossMissingSinceMs < SPIDER_PHASE_TRANSITION_GRACE_MS) {
+					quest = new ScdSlayerQuest(previousQuest.type(), previousQuest.tier(), true);
+				} else {
+					spiderBossMissingSinceMs = 0;
+				}
+			}
+		} else {
+			spiderBossMissingSinceMs = 0;
 		}
 
 		if (quest != null) lastActiveType = quest.type();
@@ -391,16 +414,6 @@ public class ScdSlayerBossTracker {
 			}
 		}
 		return closest;
-	}
-
-	/** Whether a live "Conjoined Brood" nameplate exists nearby right now - see the tick() call site for why. */
-	private boolean spiderSecondPhaseStillActive(Minecraft mc) {
-		for (Entity entity : mc.level.entitiesForRendering()) {
-			if (!(entity instanceof LivingEntity living) || !living.isAlive()) continue;
-			if (living.distanceTo(mc.player) > ENTITY_SCAN_RADIUS) continue;
-			if (matchesAnyName(living, List.of("Conjoined Brood"))) return true;
-		}
-		return false;
 	}
 
 	private static boolean matchesAnyName(LivingEntity entity, List<String> names) {
