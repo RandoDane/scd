@@ -58,7 +58,11 @@ public final class ScdTheme {
 	/** heroNumber() renders at this multiple of native font size - the single most important stat on a HUD box, e.g. kills/hour. */
 	public static final float HERO_SCALE = 2.2f;
 
-	private static final Identifier POPUP_BACKGROUND_SPRITE = Identifier.fromNamespaceAndPath("minecraft", "popup/background");
+	// Our own custom nine-slice sprite (mod/src/client/resources/assets/scd/textures/gui/sprites/hud/panel.png)
+	// - vanilla's neutral gray "popup/background" was tried first and looked exactly like generic
+	// vanilla system UI, which is precisely the "old Minecraft" look this was meant to move away
+	// from. A real asset with actual color/depth is what "modern" here actually requires.
+	private static final Identifier HUD_PANEL_SPRITE = Identifier.fromNamespaceAndPath("scd", "hud/panel");
 
 	private ScdTheme() {
 	}
@@ -91,7 +95,7 @@ public final class ScdTheme {
 	 */
 	public static void panelRounded(GuiGraphicsExtractor g, int x, int y, int w, int h) {
 		shadow(g, x, y, w, h);
-		g.blitSprite(RenderPipelines.GUI_TEXTURED, POPUP_BACKGROUND_SPRITE, x, y, w, h);
+		g.blitSprite(RenderPipelines.GUI_TEXTURED, HUD_PANEL_SPRITE, x, y, w, h);
 	}
 
 	/** The single most important number on a HUD box (e.g. kills/hour) - big and bold, left-aligned at (x, y). */
