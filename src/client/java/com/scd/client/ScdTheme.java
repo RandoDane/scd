@@ -53,10 +53,23 @@ public final class ScdTheme {
 	public static final int ACCENT_BAZAAR = 0xFF5B8DEF;
 	public static final int ACCENT_SLAYER = 0xFFEF5B5B;
 
-	/** Everything drawn through the scaled* helpers below renders at this fraction of native font size, for denser screens (10+ categories). */
-	public static final float TEXT_SCALE = 0.85f;
-	/** heroNumber() renders at this multiple of native font size - the single most important stat on a HUD box, e.g. kills/hour. */
-	public static final float HERO_SCALE = 2.2f;
+	/**
+	 * Everything drawn through the scaled* helpers below renders at this fraction of native font size,
+	 * for denser screens (10+ categories). MUST stay a whole number reciprocal / exact multiple - vanilla's
+	 * font is a small pixel bitmap sampled with nearest-neighbor, so a fractional matrix scale (the
+	 * original 0.85f) maps source pixels onto destination pixels unevenly, thickening some strokes and
+	 * thinning others - that unevenness is what read as "ugly"/muddy font, not the font itself. 1.0
+	 * (native, unscaled) is the only value guaranteed crisp for shrinking; only grow via whole multiples
+	 * (see HERO_SCALE).
+	 */
+	public static final float TEXT_SCALE = 1.0f;
+	/**
+	 * heroNumber() renders at this multiple of native font size - the single most important stat on a
+	 * HUD box, e.g. kills/hour. Kept as a whole integer for the same nearest-neighbor-sampling reason as
+	 * TEXT_SCALE above: 2.2x scaled every glyph (and its built-in drop shadow) unevenly, which is what
+	 * made the big number look chunky/blurry. 2x samples every source pixel onto a clean 2x2 block.
+	 */
+	public static final float HERO_SCALE = 2.0f;
 
 	// Our own custom nine-slice sprite (mod/src/client/resources/assets/scd/textures/gui/sprites/hud/panel.png)
 	// - vanilla's neutral gray "popup/background" was tried first and looked exactly like generic
@@ -86,31 +99,68 @@ public final class ScdTheme {
 		g.fill(x, y, x + 3, y + h, accentColor);
 	}
 
+	/** How far the shadow halo behind panelRounded() extends past the panel on every side. */
+	private static final int PANEL_SHADOW_SPREAD = 2;
+
 	/**
 	 * Rounded-corner HUD panel background, for the always-on overlays (never the /scd screens - use
 	 * panel() there). blitSprite() automatically nine-slice-scales this to (w, h) using the sprite's
 	 * own .mcmeta scaling metadata (a plain dark fill with a subtle lighter border, already exactly
-	 * what a HUD box needs) - no custom texture asset required. Casts the same drop shadow as panel()
-	 * since this is also always a top-level surface.
+	 * what a HUD box needs) - no custom texture asset required.
+	 *
+	 * The shadow is the same rounded sprite (tinted black/translucent) drawn CONCENTRICALLY LARGER
+	 * (grown by PANEL_SHADOW_SPREAD on every side) rather than offset diagonally like shadow() below -
+	 * a diagonal offset shifts the shadow's own rounded corners away from the panel's corners by a
+	 * different amount on each axis, so the two curves no longer line up and the mismatch shows as a
+	 * stray dark sliver/flat edge exactly at the corners and along whichever side got the least
+	 * coverage. Growing both dimensions by the same amount instead keeps every corner concentric with
+	 * the panel's own, so the halo is a uniform ring with no seam anywhere on the perimeter.
 	 */
 	public static void panelRounded(GuiGraphicsExtractor g, int x, int y, int w, int h) {
-		shadow(g, x, y, w, h);
-		g.blitSprite(RenderPipelines.GUI_TEXTURED, HUD_PANEL_SPRITE, x, y, w, h);
+		panelRounded(g, x, y, w, h, 0xFFFFFFFF);
+	}
+
+	/**
+	 * Same as above, but with the sprite tinted by {@code argbTint} (multiplied into its own colors -
+	 * 0xFFFFFFFF is "no change") - lets a HUD's background color be player-customizable without a
+	 * second texture asset. The shadow halo is intentionally NOT tinted (always plain black/translucent
+	 * SHADOW), since a shadow that changed color with the background would stop reading as a shadow.
+	 */
+	public static void panelRounded(GuiGraphicsExtractor g, int x, int y, int w, int h, int argbTint) {
+		int s = PANEL_SHADOW_SPREAD;
+		g.blitSprite(RenderPipelines.GUI_TEXTURED, HUD_PANEL_SPRITE, x - s, y - s, w + s * 2, h + s * 2, SHADOW);
+		g.blitSprite(RenderPipelines.GUI_TEXTURED, HUD_PANEL_SPRITE, x, y, w, h, argbTint);
 	}
 
 	/** The single most important number on a HUD box (e.g. kills/hour) - big and bold, left-aligned at (x, y). */
 	public static void heroNumber(GuiGraphicsExtractor g, Font font, String text, int x, int y, int color) {
+		heroNumber(g, font, text, x, y, color, 1.0f);
+	}
+
+	/**
+	 * Same as above, but with HERO_SCALE further multiplied by {@code textScaleMultiplier} - a per-HUD
+	 * user preference (see ScdConfig.Slayer.hudTextScale and friends). Deliberately still just a
+	 * multiply on top of the already-integer HERO_SCALE rather than a free-form size in pixels: nudging
+	 * it away from 1.0 reintroduces the fractional nearest-neighbor softness HERO_SCALE=2.0 was chosen
+	 * to avoid, so callers should keep the allowed range small (see ScdHudAppearanceScreen).
+	 */
+	public static void heroNumber(GuiGraphicsExtractor g, Font font, String text, int x, int y, int color, float textScaleMultiplier) {
 		var pose = g.pose();
 		pose.pushMatrix();
 		pose.translate(x, y);
-		pose.scale(HERO_SCALE, HERO_SCALE);
+		float scale = HERO_SCALE * textScaleMultiplier;
+		pose.scale(scale, scale);
 		g.text(font, Component.literal(text), 0, 0, color, true);
 		pose.popMatrix();
 	}
 
 	/** Height in native (unscaled) pixels that a heroNumber() line occupies - for laying out whatever comes after it. */
 	public static int heroLineHeight(Font font) {
-		return Math.round(font.lineHeight * HERO_SCALE);
+		return heroLineHeight(font, 1.0f);
+	}
+
+	public static int heroLineHeight(Font font, float textScaleMultiplier) {
+		return Math.round(font.lineHeight * HERO_SCALE * textScaleMultiplier);
 	}
 
 	public static void divider(GuiGraphicsExtractor g, int x, int y, int width) {
@@ -118,7 +168,11 @@ public final class ScdTheme {
 	}
 
 	public static int lineHeight(Font font) {
-		return Math.round(font.lineHeight * TEXT_SCALE);
+		return lineHeight(font, TEXT_SCALE);
+	}
+
+	public static int lineHeight(Font font, float scale) {
+		return Math.round(font.lineHeight * scale);
 	}
 
 	public static int textWidth(Font font, String text) {
@@ -126,18 +180,30 @@ public final class ScdTheme {
 	}
 
 	public static void label(GuiGraphicsExtractor g, Font font, String text, int x, int y, int color) {
-		scaledText(g, font, Component.literal(text), x, y, color);
+		scaledText(g, font, Component.literal(text), x, y, color, TEXT_SCALE);
+	}
+
+	public static void label(GuiGraphicsExtractor g, Font font, String text, int x, int y, int color, float scale) {
+		scaledText(g, font, Component.literal(text), x, y, color, scale);
 	}
 
 	public static void sectionLabel(GuiGraphicsExtractor g, Font font, String text, int x, int y) {
-		label(g, font, text.toUpperCase(Locale.ROOT), x, y, TEXT_MUTED);
+		sectionLabel(g, font, text, x, y, TEXT_MUTED, TEXT_SCALE);
+	}
+
+	public static void sectionLabel(GuiGraphicsExtractor g, Font font, String text, int x, int y, int color, float scale) {
+		label(g, font, text.toUpperCase(Locale.ROOT), x, y, color, scale);
 	}
 
 	public static void scaledText(GuiGraphicsExtractor g, Font font, Component text, int x, int y, int color) {
+		scaledText(g, font, text, x, y, color, TEXT_SCALE);
+	}
+
+	public static void scaledText(GuiGraphicsExtractor g, Font font, Component text, int x, int y, int color, float scale) {
 		var pose = g.pose();
 		pose.pushMatrix();
 		pose.translate(x, y);
-		pose.scale(TEXT_SCALE, TEXT_SCALE);
+		pose.scale(scale, scale);
 		g.text(font, text, 0, 0, color, true);
 		pose.popMatrix();
 	}

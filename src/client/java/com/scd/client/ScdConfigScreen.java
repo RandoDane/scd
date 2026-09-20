@@ -22,6 +22,15 @@ public class ScdConfigScreen extends Screen {
 	private static final int ROW_HEIGHT = 24;
 	private static final int TOGGLE_ROW_HEIGHT = 18;
 
+	// The "Themes" box: a small, separate floating panel pinned to the screen's bottom-right corner
+	// rather than a section inside the main panel - a global theme isn't really a "setting" you drill
+	// into, it's a one-click action you reach for from anywhere, so it gets its own always-visible spot.
+	private static final int THEME_BOX_MARGIN = 16;
+	private static final int THEME_BUTTONS_PER_ROW = 3;
+	private static final int THEME_BUTTON_WIDTH = 78;
+	private static final int THEME_BUTTON_HEIGHT = 16;
+	private static final int THEME_BUTTON_GAP = 4;
+
 	private record LabelRow(String text, int x, int y) {
 	}
 
@@ -33,6 +42,7 @@ public class ScdConfigScreen extends Screen {
 	private int panelX, panelY, panelWidth, panelHeight;
 	private int serverUrlLabelY = -1;
 	private final List<LabelRow> labelRows = new ArrayList<>();
+	private int themeBoxX, themeBoxY, themeBoxWidth, themeBoxHeight;
 
 	public ScdConfigScreen(ScdConfig config, ScdClient client) {
 		super(Component.literal("SCD"));
@@ -109,6 +119,43 @@ public class ScdConfigScreen extends Screen {
 		y += 16;
 
 		panelHeight = y + PADDING - panelY;
+
+		initThemeBox();
+	}
+
+	/**
+	 * A one-click global theme switcher, separate from the main panel (see the field-group comment
+	 * above). Applying a theme overwrites every HUD's color overrides at once - right now that's just
+	 * Slayer's, but any future HUD with its own ScdColorSlot enum using the same id convention picks
+	 * these presets up automatically the moment it gets a hudColors map (see ScdHudTheme's doc).
+	 */
+	private void initThemeBox() {
+		int rows = (int) Math.ceil(ScdHudTheme.PRESETS.size() / (double) THEME_BUTTONS_PER_ROW);
+		int contentWidth = THEME_BUTTONS_PER_ROW * THEME_BUTTON_WIDTH + (THEME_BUTTONS_PER_ROW - 1) * THEME_BUTTON_GAP;
+		themeBoxWidth = contentWidth + PADDING * 2;
+		themeBoxHeight = 32 + rows * THEME_BUTTON_HEIGHT + (rows - 1) * THEME_BUTTON_GAP + PADDING;
+		themeBoxX = this.width - themeBoxWidth - THEME_BOX_MARGIN;
+		themeBoxY = this.height - themeBoxHeight - THEME_BOX_MARGIN;
+
+		int startX = themeBoxX + PADDING;
+		int y = themeBoxY + 28;
+		int col = 0;
+		for (ScdHudTheme theme : ScdHudTheme.PRESETS) {
+			int x = startX + col * (THEME_BUTTON_WIDTH + THEME_BUTTON_GAP);
+			addRenderableWidget(new ScdButton(x, y, THEME_BUTTON_WIDTH, THEME_BUTTON_HEIGHT, Component.literal(theme.name()),
+					ScdTheme.ACCENT_BAZAAR, () -> applyGlobalTheme(theme)));
+			col++;
+			if (col >= THEME_BUTTONS_PER_ROW) {
+				col = 0;
+				y += THEME_BUTTON_HEIGHT + THEME_BUTTON_GAP;
+			}
+		}
+	}
+
+	private void applyGlobalTheme(ScdHudTheme theme) {
+		config.slayer.hudColors.clear();
+		config.slayer.hudColors.putAll(theme.colors());
+		config.save();
 	}
 
 	private int addToggle(int x, int width, int y, String label, int accentColor, boolean initial, java.util.function.Consumer<Boolean> onChange) {
@@ -127,10 +174,14 @@ public class ScdConfigScreen extends Screen {
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
 		ScdTheme.panel(g, panelX, panelY, panelWidth, panelHeight);
+		ScdTheme.panel(g, themeBoxX, themeBoxY, themeBoxWidth, themeBoxHeight);
 		super.extractRenderState(g, mouseX, mouseY, partialTick);
 
 		ScdTheme.label(g, this.font, "SCD", panelX + PADDING, panelY + 10, ScdTheme.TEXT_PRIMARY);
 		ScdTheme.divider(g, panelX + PADDING, panelY + 22, panelWidth - PADDING * 2);
+
+		ScdTheme.label(g, this.font, "Themes", themeBoxX + PADDING, themeBoxY + 10, ScdTheme.TEXT_PRIMARY);
+		ScdTheme.divider(g, themeBoxX + PADDING, themeBoxY + 22, themeBoxWidth - PADDING * 2);
 
 		if (serverUrlLabelY >= 0) {
 			ScdTheme.sectionLabel(g, this.font, "Server URL", panelX + PADDING + 10, serverUrlLabelY);
