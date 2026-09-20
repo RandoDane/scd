@@ -2,15 +2,27 @@ package com.scd.client;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.InstanceCreator;
 import com.google.gson.JsonObject;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 public class ScdConfig {
-	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+	// Pos has no no-arg constructor, so without this Gson allocates it via Unsafe when deserializing -
+	// which skips field initializers entirely, leaving `scale` at the raw JVM default of 0f for any
+	// saved config from before that field existed (or any Pos missing "scale" in its JSON for any other
+	// reason). A scale of 0 collapses the whole HUD box to nothing, which is what "starts really small"
+	// on an existing config turned out to be. Registering this makes Gson build Pos through `new
+	// Pos(0, 0)` (running its real field initializers, so scale=1.0f) before overlaying whatever fields
+	// the JSON actually has.
+	private static final Gson GSON = new GsonBuilder().setPrettyPrinting()
+			.registerTypeAdapter(Pos.class, (InstanceCreator<Pos>) type -> new Pos(0, 0))
+			.create();
 	private static final Path PATH = FabricLoader.getInstance().getConfigDir().resolve("scd.json");
 
 	public static class Pos {
@@ -60,6 +72,17 @@ public class ScdConfig {
 		public boolean bossHighlightEnabled = true;
 
 		public boolean statsHudEnabled = true;
+
+		// Player-chosen color overrides for the combined HUD's customizable regions (see
+		// ScdSlayerColorSlot), keyed by each slot's stable id - only ever contains entries the player
+		// actually changed via ScdHudAppearanceScreen, so an untouched install has an empty map and
+		// every slot just falls back to its coded default (ScdColorSlot.resolve).
+		public Map<String, Integer> hudColors = new LinkedHashMap<>();
+		// Multiplies ScdTheme.TEXT_SCALE/HERO_SCALE for this HUD only - see ScdHudAppearanceScreen. Kept
+		// close to 1.0 (see that screen's slider range) since vanilla's font is a small pixel bitmap and
+		// a fractional scale away from the already-tuned integer defaults reintroduces uneven,
+		// nearest-neighbor-sampled stroke widths - the "ugly font" bug fixed 2026-09-20.
+		public float hudTextScale = 1.0f;
 
 		// Per-type ability call-outs shown in the boss tracker box while that type's boss is up -
 		// split out so any one cue can be turned off individually instead of all-or-nothing.

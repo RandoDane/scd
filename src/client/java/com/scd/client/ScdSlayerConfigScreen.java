@@ -78,6 +78,13 @@ public class ScdSlayerConfigScreen extends Screen {
 						(g, f) -> client.slayerHud().renderPreview(g, f)))));
 		y += 22;
 
+		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16, Component.literal("Customize appearance..."), ScdTheme.ACCENT_SLAYER, () ->
+				Minecraft.getInstance().setScreen(new ScdHudAppearanceScreen(this, config, "Slayer HUD", ScdTheme.ACCENT_SLAYER,
+						List.of(ScdSlayerColorSlot.values()), config.slayer.hudColors, config.slayer.bossTrackerPosition,
+						() -> config.slayer.hudTextScale, v -> config.slayer.hudTextScale = v,
+						(g, f, px, py) -> client.slayerHud().renderPreviewAt(g, f, px, py)))));
+		y += 22;
+
 		int activeCarries = client.carryQueue().activeCount();
 		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16,
 				Component.literal(activeCarries > 0 ? "Carries (" + activeCarries + " active)..." : "Carries..."),

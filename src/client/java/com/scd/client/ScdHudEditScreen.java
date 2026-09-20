@@ -21,9 +21,11 @@ public class ScdHudEditScreen extends Screen {
 
 	private static final ScdOverlayBox.Bounds FALLBACK = new ScdOverlayBox.Bounds(0, 0, 180, 95);
 	// Half-width of the little square grabbed to resize, and the clamp range for Pos.scale.
-	private static final int HANDLE_RADIUS = 5;
-	private static final float MIN_SCALE = 0.5f;
-	private static final float MAX_SCALE = 2.5f;
+	private static final int HANDLE_RADIUS = 3;
+	// Package-visible - ScdHudAppearanceScreen's box-size slider drives the same Pos.scale field via
+	// a different control, and shares this range so both ways of resizing a HUD agree on the limits.
+	static final float MIN_SCALE = 0.5f;
+	static final float MAX_SCALE = 2.5f;
 
 	private final Screen parent;
 	private final ScdConfig config;
@@ -94,7 +96,12 @@ public class ScdHudEditScreen extends Screen {
 		if (event.button() == 0 && bounds != null) {
 			if (inResizeHandle(bounds, event.x(), event.y())) {
 				resizing = true;
-				resizeStartScale = position.scale;
+				// A corrupted/never-initialized scale of 0 (e.g. an old config saved before this field
+				// existed) would otherwise be permanently unrecoverable here: newScale is this value times
+				// a ratio in mouseDragged, and 0 times anything is still 0. Treating anything below the
+				// clamp floor as "not actually set yet" and starting the drag from the standard size
+				// instead lets a stuck-at-0 box be fixed by dragging, not just by the Reset button.
+				resizeStartScale = position.scale >= MIN_SCALE ? position.scale : 1.0f;
 				resizeStartCornerDist = distanceFromAnchor(event.x(), event.y());
 				return true;
 			}

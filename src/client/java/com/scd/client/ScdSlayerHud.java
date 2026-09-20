@@ -35,7 +35,7 @@ public class ScdSlayerHud {
 	private static final int WARNING_COLOR = 0xFFFF8855;
 	private static final int INFO_COLOR = 0xFF55DDAA;
 	private static final int PADDING = 10;
-	private static final int PANEL_WIDTH = 210;
+	private static final int BASE_PANEL_WIDTH = 210;
 	private static final int BAR_HEIGHT = 6;
 
 	private final ScdConfig config;
@@ -82,18 +82,58 @@ public class ScdSlayerHud {
 		return renderContent(graphics, font, true);
 	}
 
+	/**
+	 * Same preview as above, but anchored at an explicit (x, y) instead of the configured live
+	 * position - for ScdHudAppearanceScreen, which wants a preview sitting in a fixed spot on its own
+	 * panel rather than wherever the player last dragged the real HUD to (which could be anywhere on
+	 * screen, including behind this very settings panel). Temporarily swaps the position fields rather
+	 * than threading an override through the whole layout call chain - safe since rendering is
+	 * synchronous and single-threaded, restored in a finally so a mid-render exception can't leave the
+	 * real position corrupted.
+	 */
+	public ScdOverlayBox.Bounds renderPreviewAt(GuiGraphicsExtractor graphics, Font font, int x, int y) {
+		int savedX = config.slayer.bossTrackerPosition.x;
+		int savedY = config.slayer.bossTrackerPosition.y;
+		config.slayer.bossTrackerPosition.x = x;
+		config.slayer.bossTrackerPosition.y = y;
+		try {
+			return renderContent(graphics, font, true);
+		} finally {
+			config.slayer.bossTrackerPosition.x = savedX;
+			config.slayer.bossTrackerPosition.y = savedY;
+		}
+	}
+
+	/**
+	 * Wider than BASE_PANEL_WIDTH once the player's text-size preference exceeds 100% - at a fixed
+	 * width, bigger text ran right up against where the border should be (130% text size visibly
+	 * hitting the edge). Never narrower than the base width, so a smaller text preference doesn't
+	 * shrink the box below its usual layout.
+	 */
+	private int panelWidth() {
+		return Math.round(BASE_PANEL_WIDTH * Math.max(1f, config.slayer.hudTextScale));
+	}
+
 	private ScdOverlayBox.Bounds renderContent(GuiGraphicsExtractor graphics, Font font, boolean preview) {
 		boolean showBoss = config.slayer.bossTrackerEnabled;
 		boolean showStats = config.slayer.statsHudEnabled;
 		if (!showBoss && !showStats) return null;
 
-		// Pass 1: measure only, to get the exact height before drawing the rounded background.
-		Integer height = layoutCombined(null, font, showBoss, showStats, preview);
+		int minWidth = panelWidth();
+
+		// Pass 1: measure only, to get the exact height AND the widest line actually being drawn right
+		// now - some ability call-outs (Enderman's hitshield line especially) are long enough to run
+		// past a fixed-width panel regardless of the text-scale setting, so the panel grows to fit
+		// whatever content is live instead of clipping/overflowing it.
+		ScdWidthTracker widthTracker = new ScdWidthTracker();
+		Integer height = layoutCombined(null, font, minWidth, showBoss, showStats, preview, widthTracker);
 		if (height == null) return null;
+		int panelWidth = Math.max(minWidth, widthTracker.maxWidth() + PADDING * 2);
 
 		int panelX = config.slayer.bossTrackerPosition.x;
 		int panelY = config.slayer.bossTrackerPosition.y;
 		float scale = config.slayer.bossTrackerPosition.scale;
+		int background = ScdColorSlot.resolve(config.slayer.hudColors, ScdSlayerColorSlot.BACKGROUND);
 
 		// Drawn in local (0,0)-relative coordinates, wrapped in a single translate+scale transform -
 		// try/finally so an exception partway through can never leave the pose stack unbalanced for
@@ -104,21 +144,22 @@ public class ScdSlayerHud {
 		try {
 			pose.translate(panelX, panelY);
 			pose.scale(scale, scale);
-			ScdTheme.panelRounded(graphics, 0, 0, PANEL_WIDTH, height);
-			layoutCombined(graphics, font, showBoss, showStats, preview);
+			ScdTheme.panelRounded(graphics, 0, 0, panelWidth, height, background);
+			layoutCombined(graphics, font, panelWidth, showBoss, showStats, preview, widthTracker);
 		} finally {
 			pose.popMatrix();
 		}
 
-		return new ScdOverlayBox.Bounds(panelX, panelY, Math.round(PANEL_WIDTH * scale), Math.round(height * scale));
+		return new ScdOverlayBox.Bounds(panelX, panelY, Math.round(panelWidth * scale), Math.round(height * scale));
 	}
 
 	/** graphics == null means measure only. Returns null if neither half has anything to show right now. */
-	private Integer layoutCombined(GuiGraphicsExtractor graphics, Font font, boolean showBoss, boolean showStats, boolean preview) {
+	private Integer layoutCombined(GuiGraphicsExtractor graphics, Font font, int panelWidth, boolean showBoss, boolean showStats,
+			boolean preview, ScdWidthTracker widthTracker) {
 		int y = PADDING;
 		boolean drewBoss = false;
 		if (showBoss) {
-			Integer afterBoss = layoutBossSection(graphics, font, y, preview);
+			Integer afterBoss = layoutBossSection(graphics, font, panelWidth, y, preview, widthTracker);
 			if (afterBoss != null) {
 				y = afterBoss;
 				drewBoss = true;
@@ -129,14 +170,14 @@ public class ScdSlayerHud {
 			// Peek measure-only first, so the divider below is only ever drawn when the stats section
 			// really does have something following it - otherwise a stats-has-nothing-yet frame would
 			// leave a dangling divider line with nothing under it.
-			Integer wouldShow = statsHud.layoutSection(null, font, PANEL_WIDTH, y, preview);
+			Integer wouldShow = statsHud.layoutSection(null, font, panelWidth, y, preview, widthTracker);
 			if (wouldShow != null) {
 				if (drewBoss) {
 					y += 6;
-					if (graphics != null) ScdTheme.divider(graphics, PADDING, y, PANEL_WIDTH - PADDING * 2);
+					if (graphics != null) ScdTheme.divider(graphics, PADDING, y, panelWidth - PADDING * 2);
 					y += 9;
 				}
-				y = statsHud.layoutSection(graphics, font, PANEL_WIDTH, y, preview);
+				y = statsHud.layoutSection(graphics, font, panelWidth, y, preview, widthTracker);
 				drewStats = true;
 			}
 		}
@@ -145,7 +186,8 @@ public class ScdSlayerHud {
 	}
 
 	/** graphics == null means measure only. Returns null if there's nothing boss/quest-related to show right now. */
-	private Integer layoutBossSection(GuiGraphicsExtractor graphics, Font font, int startY, boolean preview) {
+	private Integer layoutBossSection(GuiGraphicsExtractor graphics, Font font, int panelWidth, int startY, boolean preview,
+			ScdWidthTracker widthTracker) {
 		LivingEntity boss = preview ? null : tracker.currentBossOrNull();
 		ScdSlayerQuest quest = preview ? null : tracker.currentQuestOrNull();
 
@@ -204,18 +246,25 @@ public class ScdSlayerHud {
 		}
 
 		int contentX = PADDING;
-		int fieldWidth = PANEL_WIDTH - PADDING * 2;
-		int lineH = ScdTheme.lineHeight(font);
+		int fieldWidth = panelWidth - PADDING * 2;
+		float textScale = config.slayer.hudTextScale;
+		int lineH = ScdTheme.lineHeight(font, textScale);
 		int y = startY;
 
-		if (graphics != null) graphics.text(font, Component.literal(title), contentX, y, ScdTheme.ACCENT_SLAYER, true);
-		y += font.lineHeight + 2;
+		int titleColor = ScdColorSlot.resolve(config.slayer.hudColors, ScdSlayerColorSlot.BOSS_TITLE);
+		int bodyColor = ScdColorSlot.resolve(config.slayer.hudColors, ScdSlayerColorSlot.BOSS_TEXT);
 
-		if (graphics != null) ScdTheme.label(graphics, font, line2, contentX, y, ScdTheme.TEXT_SECONDARY);
+		widthTracker.track(font, title, textScale);
+		if (graphics != null) ScdTheme.label(graphics, font, title, contentX, y, titleColor, textScale);
+		y += lineH + 2;
+
+		widthTracker.track(font, line2, textScale);
+		if (graphics != null) ScdTheme.label(graphics, font, line2, contentX, y, bodyColor, textScale);
 		y += lineH + 2;
 
 		for (String extraLine : extraLines) {
-			if (graphics != null) ScdTheme.label(graphics, font, extraLine, contentX, y, extraLinesColor);
+			widthTracker.track(font, extraLine, textScale);
+			if (graphics != null) ScdTheme.label(graphics, font, extraLine, contentX, y, extraLinesColor, textScale);
 			y += lineH + 2;
 		}
 

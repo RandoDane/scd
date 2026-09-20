@@ -63,7 +63,7 @@ public class ScdSlayerStatsHud {
 	 * adds that once for the whole panel), or null if there's nothing to show at all (no kills yet
 	 * this session and not a preview).
 	 */
-	public Integer layoutSection(GuiGraphicsExtractor graphics, Font font, int panelWidth, int startY, boolean preview) {
+	public Integer layoutSection(GuiGraphicsExtractor graphics, Font font, int panelWidth, int startY, boolean preview, ScdWidthTracker widthTracker) {
 		int kills;
 		long avgMs;
 		double perHour;
@@ -105,42 +105,49 @@ public class ScdSlayerStatsHud {
 		boolean showBoost = xpBoostPercent > 0 && xpBoostMayor != null;
 		String boostLine = showBoost ? String.format(Locale.ROOT, "+%.0f%% %s Slayer XP", xpBoostPercent, xpBoostMayor) : null;
 
+		float textScale = config.slayer.hudTextScale;
+		int labelColor = ScdColorSlot.resolve(config.slayer.hudColors, ScdSlayerColorSlot.STATS_LABEL);
+		int valueColor = ScdColorSlot.resolve(config.slayer.hudColors, ScdSlayerColorSlot.STATS_VALUE);
+
 		int contentX = PADDING;
 		int fieldWidth = panelWidth - PADDING * 2;
 		int columnWidth = (fieldWidth - COLUMN_GAP) / 2;
-		int lineH = ScdTheme.lineHeight(font);
+		int lineH = ScdTheme.lineHeight(font, textScale);
 
 		int y = startY;
 
-		if (graphics != null) ScdTheme.sectionLabel(graphics, font, sectionHeader, contentX, y);
+		widthTracker.track(font, sectionHeader.toUpperCase(Locale.ROOT), textScale);
+		if (graphics != null) ScdTheme.sectionLabel(graphics, font, sectionHeader, contentX, y, labelColor, textScale);
 		y += lineH + 8;
 
-		if (graphics != null) ScdTheme.sectionLabel(graphics, font, "Kills / Hour", contentX, y);
+		if (graphics != null) ScdTheme.sectionLabel(graphics, font, "Kills / Hour", contentX, y, labelColor, textScale);
 		y += lineH + 2;
-		if (graphics != null) ScdTheme.heroNumber(graphics, font, heroText, contentX, y, ScdTheme.TEXT_PRIMARY);
-		y += ScdTheme.heroLineHeight(font) + 8;
+		widthTracker.track(font, heroText, ScdTheme.HERO_SCALE * textScale);
+		if (graphics != null) ScdTheme.heroNumber(graphics, font, heroText, contentX, y, valueColor, textScale);
+		y += ScdTheme.heroLineHeight(font, textScale) + 8;
 		if (graphics != null) ScdTheme.divider(graphics, contentX, y, fieldWidth);
 		y += 9;
 
 		for (int i = 0; i < grid.size(); i += 2) {
 			Stat left = grid.get(i);
 			if (graphics != null) {
-				ScdTheme.sectionLabel(graphics, font, left.label(), contentX, y);
-				ScdTheme.label(graphics, font, left.value(), contentX, y + lineH + 2, ScdTheme.TEXT_PRIMARY);
+				ScdTheme.sectionLabel(graphics, font, left.label(), contentX, y, labelColor, textScale);
+				ScdTheme.label(graphics, font, left.value(), contentX, y + lineH + 2, valueColor, textScale);
 			}
 			if (i + 1 < grid.size()) {
 				Stat right = grid.get(i + 1);
 				int colX2 = contentX + columnWidth + COLUMN_GAP;
 				if (graphics != null) {
-					ScdTheme.sectionLabel(graphics, font, right.label(), colX2, y);
-					ScdTheme.label(graphics, font, right.value(), colX2, y + lineH + 2, ScdTheme.TEXT_PRIMARY);
+					ScdTheme.sectionLabel(graphics, font, right.label(), colX2, y, labelColor, textScale);
+					ScdTheme.label(graphics, font, right.value(), colX2, y + lineH + 2, valueColor, textScale);
 				}
 			}
 			y += lineH * 2 + 8;
 		}
 
 		if (boostLine != null) {
-			if (graphics != null) ScdTheme.label(graphics, font, boostLine, contentX, y, ScdTheme.TEXT_MUTED);
+			widthTracker.track(font, boostLine, textScale);
+			if (graphics != null) ScdTheme.label(graphics, font, boostLine, contentX, y, labelColor, textScale);
 			y += lineH + 4;
 		}
 
