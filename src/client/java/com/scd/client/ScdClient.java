@@ -196,18 +196,19 @@ public class ScdClient implements ClientModInitializer {
 				}));
 			}
 
-			if (ScdAccessoryBagWatcher.isAccessoryBagScreen(screen)) {
+			if (ScdAccessoryBagWatcher.isAccessoryBagScreen(screen) && config.accessories.missingAccessoriesOverlayEnabled) {
 				// Reset happens exactly once, right here at the fresh-screen-open moment (not inferred
 				// from the watcher's own accumulated state) - see ScdAccessoryBagWatcher.isFreshPageOne's
 				// doc comment for why that matters (an accessory removed since the last scan would
 				// otherwise stay counted forever).
 				if (ScdAccessoryBagWatcher.isFreshPageOne(screen)) accessoryBagWatcher.reset();
-				ScreenEvents.afterTick(screen).register(s -> ScdLog.guard("accessory bag watch", () -> {
-					if (config.accessories.missingAccessoriesOverlayEnabled) accessoryBagWatcher.onScreenOpened(s);
-				}));
-				ScreenEvents.afterExtract(screen).register((s, graphics, mouseX, mouseY, partialTick) -> ScdLog.guard("accessory bag overlay", () -> {
-					if (config.accessories.missingAccessoriesOverlayEnabled) renderAccessoryBagOverlay(graphics);
-				}));
+				// The missing-accessories list comes from the backend (server/src/hypixelProfile.js),
+				// not this in-game scan - kick that fetch off here too so it's ready without the player
+				// needing to separately visit /scd's own Accessories screen first.
+				if (accessoryData.status() == ScdAccessoryData.Status.IDLE) refreshAccessories();
+				ScreenEvents.afterTick(screen).register(s -> ScdLog.guard("accessory bag watch", () -> accessoryBagWatcher.onScreenOpened(s)));
+				ScreenEvents.afterExtract(screen).register((s, graphics, mouseX, mouseY, partialTick) ->
+						ScdLog.guard("accessory bag overlay", () -> renderAccessoryBagOverlay(graphics)));
 			}
 		});
 
@@ -951,7 +952,7 @@ public class ScdClient implements ClientModInitializer {
 		var font = Minecraft.getInstance().font;
 
 		int lineH = ScdTheme.lineHeight(font);
-		int contentLines = 3 + (accessoryBagWatcher.isComplete() ? 1 : 0);
+		int contentLines = 3 + (accessoryBagWatcher.isComplete() ? 1 : 0) + 1;
 		int height = 22 + contentLines * (lineH + 4) + 10;
 
 		ScdTheme.panel(g, x, y, width, height);
@@ -967,10 +968,21 @@ public class ScdClient implements ClientModInitializer {
 		if (accessoryBagWatcher.isComplete()) {
 			ScdTheme.label(g, font, "Accessory Power: " + accessoryBagWatcher.totalAccessoryPower(), x + 10, ty, ScdTheme.TEXT_PRIMARY);
 			ty += lineH + 4;
-			ScdTheme.label(g, font, "Missing list: not built yet", x + 10, ty, ScdTheme.TEXT_MUTED);
 		} else {
 			ScdTheme.label(g, font, "Keep browsing to finish the scan", x + 10, ty, ScdTheme.TEXT_MUTED);
+			ty += lineH + 4;
 		}
+
+		// Separate data source from the scan above (the server's ACCESSORY-category item list, see
+		// ScdApiClient.AccessorySummary.missingAccessories's doc comment for the known upgrade-family
+		// over-counting caveat) - shown as a plain count here, not the full names, since this panel is
+		// too narrow for a browsable list; see ScdAccessoryScreen for that.
+		String missingText = switch (accessoryData.status()) {
+			case IDLE, LOADING -> "Missing: loading...";
+			case ERROR -> "Missing: unavailable";
+			case LOADED -> "Missing: " + accessoryData.summary().missingAccessories().size();
+		};
+		ScdTheme.label(g, font, missingText, x + 10, ty, ScdTheme.TEXT_MUTED);
 	}
 
 	/**

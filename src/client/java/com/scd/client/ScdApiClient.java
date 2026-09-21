@@ -175,7 +175,19 @@ public class ScdApiClient {
 	public record Accessory(String id, String name, String rarity, int magicalPower, int count) {
 	}
 
-	public record AccessorySummary(String username, int accessoryCount, Integer peakMagicalPower, List<Accessory> accessories) {
+	public record MissingAccessory(String id, String name) {
+	}
+
+	/**
+	 * missingAccessories is a NAIVE diff (every ACCESSORY-category item id the player's bag doesn't
+	 * have) against Hypixel's own current item list - confirmed live 2026-09-21 that this over-reports:
+	 * owning only an item's highest upgrade tier (e.g. "Accretion Artifact") still lists its lower
+	 * tiers ("Accretion Ring", "Accretion Talisman") as missing, since upgrading consumes them rather
+	 * than leaving you holding all three. Correctly collapsing an upgrade family into one entry needs
+	 * data this project doesn't have yet - shown as-is, not silently "fixed" with a guessed heuristic.
+	 */
+	public record AccessorySummary(String username, int accessoryCount, Integer peakMagicalPower,
+			List<Accessory> accessories, List<MissingAccessory> missingAccessories) {
 	}
 
 	/**
@@ -214,11 +226,20 @@ public class ScdApiClient {
 					}
 					JsonElement peakEl = body.get("peakMagicalPower");
 					Integer peak = peakEl != null && !peakEl.isJsonNull() ? peakEl.getAsInt() : null;
+					List<MissingAccessory> missing = new ArrayList<>();
+					JsonArray missingArr = body.getAsJsonArray("missingAccessories");
+					if (missingArr != null) {
+						for (var el : missingArr) {
+							JsonObject o = el.getAsJsonObject();
+							missing.add(new MissingAccessory(o.get("id").getAsString(), o.get("name").getAsString()));
+						}
+					}
 					return new AccessorySummary(
 							body.get("username").getAsString(),
 							body.get("accessoryCount").getAsInt(),
 							peak,
-							accessories);
+							accessories,
+							missing);
 				});
 	}
 

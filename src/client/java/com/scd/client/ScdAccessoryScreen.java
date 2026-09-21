@@ -36,6 +36,7 @@ public class ScdAccessoryScreen extends Screen {
 	private final ScdConfig config;
 	private final ScdClient client;
 	private int page = 0;
+	private boolean showMissing = false;
 	private ScdAccessoryData.Status lastSeenStatus;
 
 	private int panelX, panelY, panelWidth, panelHeight;
@@ -115,22 +116,28 @@ public class ScdAccessoryScreen extends Screen {
 		summaryLabelY = y;
 		y += ROW_HEIGHT + 4;
 
-		List<ScdApiClient.Accessory> accessories = summary.accessories();
-		int pageCount = Math.max(1, (accessories.size() + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE);
+		// Two views over the same fetch, not two separate fetches - "missing" is a naive id diff
+		// against Hypixel's own item list computed server-side (see AccessorySummary's own doc
+		// comment for the known upgrade-family over-counting caveat), so it needs no extra request.
+		List<String> rowTexts = showMissing
+				? summary.missingAccessories().stream().map(ScdApiClient.MissingAccessory::name).toList()
+				: summary.accessories().stream().map(acc -> {
+					String countSuffix = acc.count() > 1 ? " x" + acc.count() : "";
+					String rarityLabel = acc.rarity() != null ? acc.rarity() : "?";
+					return acc.name() + countSuffix + " - " + rarityLabel + " (" + acc.magicalPower() + " MP)";
+				}).toList();
+
+		int pageCount = Math.max(1, (rowTexts.size() + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE);
 		page = Math.max(0, Math.min(page, pageCount - 1));
 
-		if (accessories.isEmpty()) {
+		if (rowTexts.isEmpty()) {
 			statusLabelY = y;
 			y += ROW_HEIGHT;
 		} else {
 			int from = page * ROWS_PER_PAGE;
-			int to = Math.min(from + ROWS_PER_PAGE, accessories.size());
+			int to = Math.min(from + ROWS_PER_PAGE, rowTexts.size());
 			for (int i = from; i < to; i++) {
-				var acc = accessories.get(i);
-				String countSuffix = acc.count() > 1 ? " x" + acc.count() : "";
-				String rarityLabel = acc.rarity() != null ? acc.rarity() : "?";
-				rowLabels.add(new RowLabel(acc.name() + countSuffix + " - " + rarityLabel + " (" + acc.magicalPower() + " MP)",
-						y + 3, ScdTheme.TEXT_SECONDARY));
+				rowLabels.add(new RowLabel(rowTexts.get(i), y + 3, ScdTheme.TEXT_SECONDARY));
 				y += ROW_HEIGHT;
 			}
 		}
@@ -157,6 +164,16 @@ public class ScdAccessoryScreen extends Screen {
 			y += 22;
 		}
 
+		String toggleLabel = showMissing
+				? "Show owned (" + summary.accessoryCount() + ")"
+				: "Show missing (" + summary.missingAccessories().size() + ")";
+		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16, Component.literal(toggleLabel), ScdTheme.ACCENT_ACCESSORIES, () -> {
+			showMissing = !showMissing;
+			page = 0;
+			rebuildWidgets();
+		}));
+		y += 22;
+
 		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16, Component.literal("Refresh"), ScdTheme.ACCENT_ACCESSORIES, client::refreshAccessories));
 		y += 22;
 
@@ -180,11 +197,19 @@ public class ScdAccessoryScreen extends Screen {
 		}
 		if (summaryLabelY >= 0) {
 			var summary = client.accessoryData().summary();
-			// peakMagicalPower is Hypixel's own lifetime-best figure, NOT the current total (confirmed
-			// wrong live when first shown as "Magical Power" outright - see ScdApiClient.fetchAccessories)
-			// - labelled explicitly as a peak here so it's never mistaken for the live number again.
-			String peakSuffix = summary.peakMagicalPower() != null ? " (peak Accessory Power ever: " + summary.peakMagicalPower() + ")" : "";
-			String text = summary.accessoryCount() + " accessories" + peakSuffix;
+			String text;
+			if (showMissing) {
+				// Naive id diff against Hypixel's own item list - see AccessorySummary's doc comment for
+				// the known upgrade-family over-counting caveat (a maxed-out item's lower tiers still
+				// show here, since upgrading consumes rather than keeps them).
+				text = summary.missingAccessories().size() + " missing (may include already-upgraded lower tiers - see notes)";
+			} else {
+				// peakMagicalPower is Hypixel's own lifetime-best figure, NOT the current total (confirmed
+				// wrong live when first shown as "Magical Power" outright - see ScdApiClient.fetchAccessories)
+				// - labelled explicitly as a peak here so it's never mistaken for the live number again.
+				String peakSuffix = summary.peakMagicalPower() != null ? " (peak Accessory Power ever: " + summary.peakMagicalPower() + ")" : "";
+				text = summary.accessoryCount() + " accessories" + peakSuffix;
+			}
 			ScdTheme.label(g, this.font, text, panelX + PADDING, summaryLabelY, ScdTheme.TEXT_PRIMARY);
 		}
 		for (RowLabel row : rowLabels) {
@@ -192,8 +217,9 @@ public class ScdAccessoryScreen extends Screen {
 		}
 		ScdTheme.label(g, this.font, "Missing accessories overlay", panelX + PADDING, missingOverlayLabelY, ScdTheme.TEXT_SECONDARY);
 		if (pageLabelY >= 0) {
-			var accessories = client.accessoryData().summary().accessories();
-			int pageCount = Math.max(1, (accessories.size() + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE);
+			var summary = client.accessoryData().summary();
+			int rowCount = showMissing ? summary.missingAccessories().size() : summary.accessories().size();
+			int pageCount = Math.max(1, (rowCount + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE);
 			ScdTheme.scaledCenteredText(g, this.font, Component.literal("Page " + (page + 1) + "/" + pageCount),
 					panelX + panelWidth / 2, pageLabelY, ScdTheme.TEXT_MUTED);
 		}
@@ -203,7 +229,7 @@ public class ScdAccessoryScreen extends Screen {
 		return switch (client.accessoryData().status()) {
 			case IDLE, LOADING -> "Loading accessories...";
 			case ERROR -> "Failed: " + client.accessoryData().errorMessage();
-			case LOADED -> "Nothing in your accessory bag.";
+			case LOADED -> showMissing ? "None missing - you have every accessory!" : "Nothing in your accessory bag.";
 		};
 	}
 
