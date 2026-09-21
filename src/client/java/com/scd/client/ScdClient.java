@@ -11,6 +11,7 @@ import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.commands.CommandBuildContext;
@@ -48,6 +49,7 @@ public class ScdClient implements ClientModInitializer {
 	private final ScdCarryBossWatcher carryBossWatcher = new ScdCarryBossWatcher(this::handleCarryBossKilled);
 	private final ScdInventoryWatcher inventoryWatcher = new ScdInventoryWatcher();
 	private final ScdAccessoryData accessoryData = new ScdAccessoryData();
+	private final ScdAccessoryBagWatcher accessoryBagWatcher = new ScdAccessoryBagWatcher();
 	// Throwaway proof-of-concept for the entity-glow mixin (see FEATURE_ROADMAP.md's "T2/T3
 	// re-scoped" section) - /scd debug glowtest toggles this, the registered adder below does the
 	// rest. Remove alongside its adder/command once confirmed live.
@@ -191,6 +193,20 @@ public class ScdClient implements ClientModInitializer {
 						armMenuDump = false;
 						dumpScreenContents(s);
 					}
+				}));
+			}
+
+			if (ScdAccessoryBagWatcher.isAccessoryBagScreen(screen)) {
+				// Reset happens exactly once, right here at the fresh-screen-open moment (not inferred
+				// from the watcher's own accumulated state) - see ScdAccessoryBagWatcher.isFreshPageOne's
+				// doc comment for why that matters (an accessory removed since the last scan would
+				// otherwise stay counted forever).
+				if (ScdAccessoryBagWatcher.isFreshPageOne(screen)) accessoryBagWatcher.reset();
+				ScreenEvents.afterTick(screen).register(s -> ScdLog.guard("accessory bag watch", () -> {
+					if (config.accessories.missingAccessoriesOverlayEnabled) accessoryBagWatcher.onScreenOpened(s);
+				}));
+				ScreenEvents.afterExtract(screen).register((s, graphics, mouseX, mouseY, partialTick) -> ScdLog.guard("accessory bag overlay", () -> {
+					if (config.accessories.missingAccessoriesOverlayEnabled) renderAccessoryBagOverlay(graphics);
 				}));
 			}
 		});
@@ -916,6 +932,44 @@ public class ScdClient implements ClientModInitializer {
 					+ carryBossWatcher.describeLive(entry);
 			source.sendFeedback(Component.literal(line));
 			ScdLog.info("carry debug: " + line);
+		}
+	}
+
+	/**
+	 * Drawn to the left of the vanilla Accessory Bag screen (see ScdAccessoryBagWatcher) while
+	 * "Missing accessories overlay" is enabled - currently just scan progress + the live Accessory
+	 * Power total once a full scan completes, not yet an actual missing-accessory list (that needs a
+	 * maintained master accessory list this project doesn't have yet, see FEATURE_ROADMAP.md §13).
+	 * Fixed screen-relative position rather than docked against the vanilla GUI's own computed
+	 * bounds - simple and always correct regardless of that GUI's actual size, at the cost of not
+	 * being pixel-snug against it.
+	 */
+	private void renderAccessoryBagOverlay(GuiGraphicsExtractor g) {
+		int x = 10;
+		int y = 10;
+		int width = 170;
+		var font = Minecraft.getInstance().font;
+
+		int lineH = ScdTheme.lineHeight(font);
+		int contentLines = 3 + (accessoryBagWatcher.isComplete() ? 1 : 0);
+		int height = 22 + contentLines * (lineH + 4) + 10;
+
+		ScdTheme.panel(g, x, y, width, height);
+		ScdTheme.label(g, font, "Accessory Scan", x + 10, y + 10, ScdTheme.TEXT_PRIMARY);
+		ScdTheme.divider(g, x + 10, y + 22, width - 20);
+
+		int ty = y + 30;
+		ScdTheme.label(g, font, "Scanned: " + accessoryBagWatcher.accessoryCount() + " items", x + 10, ty, ScdTheme.TEXT_SECONDARY);
+		ty += lineH + 4;
+		ScdTheme.label(g, font, "Pages: " + accessoryBagWatcher.pagesScanned() + "/" + Math.max(1, accessoryBagWatcher.totalPages()),
+				x + 10, ty, ScdTheme.TEXT_SECONDARY);
+		ty += lineH + 4;
+		if (accessoryBagWatcher.isComplete()) {
+			ScdTheme.label(g, font, "Accessory Power: " + accessoryBagWatcher.totalAccessoryPower(), x + 10, ty, ScdTheme.TEXT_PRIMARY);
+			ty += lineH + 4;
+			ScdTheme.label(g, font, "Missing list: not built yet", x + 10, ty, ScdTheme.TEXT_MUTED);
+		} else {
+			ScdTheme.label(g, font, "Keep browsing to finish the scan", x + 10, ty, ScdTheme.TEXT_MUTED);
 		}
 	}
 
