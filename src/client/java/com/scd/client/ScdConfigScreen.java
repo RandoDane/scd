@@ -109,6 +109,17 @@ public class ScdConfigScreen extends Screen {
 				}));
 		y += ROW_HEIGHT + 4;
 
+		// --- Accessories (live viewer for now - a Hypixel-API-backed lookup, not a local setting,
+		// so it opens straight into the viewer rather than a settings drill-down; see
+		// FEATURE_ROADMAP.md §13 for what's planned on top of this) ---
+		addRenderableWidget(new ScdCategoryCard(contentX, y, fieldWidth, ROW_HEIGHT,
+				Component.literal("Accessories"), "Your accessory bag + estimated Magical Power", ScdTheme.ACCENT_ACCESSORIES, () -> {
+					applyServerUrlFieldIfPresent();
+					config.save();
+					Minecraft.getInstance().setScreen(new ScdAccessoryScreen(this, client));
+				}));
+		y += ROW_HEIGHT + 4;
+
 		y += 6;
 		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16, Component.literal("Close"), ScdTheme.ACCENT_BAZAAR, () -> {
 			applyServerUrlFieldIfPresent();

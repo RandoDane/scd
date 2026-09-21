@@ -171,6 +171,60 @@ public class ScdApiClient {
 				});
 	}
 
+	public record Accessory(String id, String name, String rarity, int magicalPower, int count) {
+	}
+
+	public record AccessorySummary(String username, int accessoryCount, int estimatedMagicalPower, List<Accessory> accessories) {
+	}
+
+	/**
+	 * GETs /api/profile/{username}/accessories - a live, per-player, authenticated Hypixel lookup
+	 * (needs the server's own HYPIXEL_API_KEY, see server/README.md), unlike every other endpoint
+	 * here which is public/cached. estimatedMagicalPower is exactly that - an estimate, not the
+	 * authoritative in-game number - see hypixelProfile.js's own doc comment for why.
+	 */
+	public CompletableFuture<AccessorySummary> fetchAccessories(String username) {
+		String url = baseUrl + "/api/profile/" + java.net.URLEncoder.encode(username, java.nio.charset.StandardCharsets.UTF_8) + "/accessories";
+		HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+				.timeout(Duration.ofSeconds(15))
+				.GET()
+				.build();
+
+		return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+				.thenApply(res -> {
+					if (res.statusCode() != 200) {
+						throw new RuntimeException(extractErrorMessage(res.body(), res.statusCode()));
+					}
+					JsonObject body = JsonParser.parseString(res.body()).getAsJsonObject();
+					List<Accessory> accessories = new ArrayList<>();
+					for (var el : body.getAsJsonArray("accessories")) {
+						JsonObject o = el.getAsJsonObject();
+						accessories.add(new Accessory(
+								o.get("id").getAsString(),
+								o.get("name").getAsString(),
+								nullableString(o, "rarity"),
+								o.get("magicalPower").getAsInt(),
+								o.get("count").getAsInt()));
+					}
+					return new AccessorySummary(
+							body.get("username").getAsString(),
+							body.get("accessoryCount").getAsInt(),
+							body.get("estimatedMagicalPower").getAsInt(),
+							accessories);
+				});
+	}
+
+	/** The server's error responses are {"error": "human message", "code": "..."} - falls back to a plain HTTP status if the body isn't that shape. */
+	private static String extractErrorMessage(String body, int statusCode) {
+		try {
+			JsonObject err = JsonParser.parseString(body).getAsJsonObject();
+			if (err.has("error")) return err.get("error").getAsString();
+		} catch (RuntimeException ignored) {
+			// Not JSON, or not the expected shape - fall through to the plain status message.
+		}
+		return "HTTP " + statusCode;
+	}
+
 	private static Icon parseIcon(JsonObject icon) {
 		if (icon == null) return null;
 		JsonObject skin = icon.has("skin") && icon.get("skin").isJsonObject() ? icon.getAsJsonObject("skin") : null;

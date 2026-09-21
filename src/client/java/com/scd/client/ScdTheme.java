@@ -52,6 +52,7 @@ public final class ScdTheme {
 
 	public static final int ACCENT_BAZAAR = 0xFF5B8DEF;
 	public static final int ACCENT_SLAYER = 0xFFEF5B5B;
+	public static final int ACCENT_ACCESSORIES = 0xFFE8B84B;
 
 	/**
 	 * Everything drawn through the scaled* helpers below renders at this fraction of native font size,

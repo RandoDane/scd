@@ -47,6 +47,7 @@ public class ScdClient implements ClientModInitializer {
 	private ScdCarryQueue carryQueue;
 	private final ScdCarryBossWatcher carryBossWatcher = new ScdCarryBossWatcher(this::handleCarryBossKilled);
 	private final ScdInventoryWatcher inventoryWatcher = new ScdInventoryWatcher();
+	private final ScdAccessoryData accessoryData = new ScdAccessoryData();
 	// Throwaway proof-of-concept for the entity-glow mixin (see FEATURE_ROADMAP.md's "T2/T3
 	// re-scoped" section) - /scd debug glowtest toggles this, the registered adder below does the
 	// rest. Remove alongside its adder/command once confirmed live.
@@ -262,6 +263,31 @@ public class ScdClient implements ClientModInitializer {
 
 	public ScdSlayerBossTracker slayerTracker() {
 		return slayerTracker;
+	}
+
+	public ScdAccessoryData accessoryData() {
+		return accessoryData;
+	}
+
+	/**
+	 * Fetches the logged-in account's own accessory bag from the server (a live, per-player Hypixel
+	 * API lookup - see ScdApiClient.fetchAccessories/server/src/hypixelProfile.js), updating
+	 * accessoryData() when it lands. Safe to call repeatedly - a fetch already in flight is not
+	 * duplicated. Not queued/retried automatically on failure; ScdAccessoryScreen's "Retry" button
+	 * calls this again directly.
+	 */
+	public void refreshAccessories() {
+		if (accessoryData.status() == ScdAccessoryData.Status.LOADING) return;
+		String username = Minecraft.getInstance().getUser().getName();
+		accessoryData.markLoading();
+		api.fetchAccessories(username).whenComplete((result, err) -> Minecraft.getInstance().execute(() -> {
+			if (err != null) {
+				ScdLog.warn("Accessory fetch failed for " + username, err);
+				accessoryData.markError(err.getMessage());
+			} else {
+				accessoryData.markLoaded(result);
+			}
+		}));
 	}
 
 	public ScdSlayerDrops slayerDrops() {
