@@ -666,6 +666,16 @@ public class ScdClient implements ClientModInitializer {
 										.executes(ctx -> {
 											reportLastHoveredNbt(ctx.getSource());
 											return 1;
+										})))
+						// Dumps ScdAccessoryBagWatcher's own accumulated state - every item it's
+						// currently counting plus each one's own Accessory Power, so a total that
+						// doesn't match the in-game number (like the account with 826 scanned vs a
+						// real 824) can be tracked to a specific item instead of guessed at.
+						.then(ClientCommands.literal("accessories")
+								.then(ClientCommands.literal("scan")
+										.executes(ctx -> {
+											reportAccessoryBagScan(ctx.getSource());
+											return 1;
 										}))))
 				.then(ClientCommands.literal("slayer")
 						.then(ClientCommands.literal("debug")
@@ -983,6 +993,26 @@ public class ScdClient implements ClientModInitializer {
 			case LOADED -> "Missing: " + accessoryData.summary().missingAccessories().size();
 		};
 		ScdTheme.label(g, font, missingText, x + 10, ty, ScdTheme.TEXT_MUTED);
+	}
+
+	/**
+	 * "/scd debug accessories scan" - dumps ScdAccessoryBagWatcher's own accumulated state: every
+	 * item it currently has counted, that item's own Accessory Power, and the running total, sorted
+	 * so the highest-power items are easiest to eyeball. Built specifically to chase a small (826
+	 * scanned vs 824 real) discrepancy reported live - narrows it to a specific item/rarity instead
+	 * of guessing at a cause blind.
+	 */
+	private void reportAccessoryBagScan(FabricClientCommandSource source) {
+		var items = accessoryBagWatcher.accessories().stream()
+				.sorted((a, b) -> Integer.compare(b.accessoryPower(), a.accessoryPower()))
+				.toList();
+		source.sendFeedback(Component.literal("=== Accessory scan: " + items.size() + " items, "
+				+ accessoryBagWatcher.pagesScanned() + "/" + Math.max(1, accessoryBagWatcher.totalPages()) + " pages, total "
+				+ accessoryBagWatcher.totalAccessoryPower() + " Accessory Power (full list in logs/latest.log) ==="));
+		ScdLog.info("=== /scd debug accessories scan: " + items.size() + " items, total " + accessoryBagWatcher.totalAccessoryPower() + " Accessory Power ===");
+		for (var item : items) {
+			ScdLog.info("  " + item.accessoryPower() + " - " + item.name() + " [" + item.rarity() + "]");
+		}
 	}
 
 	/**
