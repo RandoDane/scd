@@ -174,14 +174,17 @@ public class ScdApiClient {
 	public record Accessory(String id, String name, String rarity, int magicalPower, int count) {
 	}
 
-	public record AccessorySummary(String username, int accessoryCount, int estimatedMagicalPower, List<Accessory> accessories) {
+	public record AccessorySummary(String username, int accessoryCount, int magicalPower, List<Accessory> accessories) {
 	}
 
 	/**
 	 * GETs /api/profile/{username}/accessories - a live, per-player, authenticated Hypixel lookup
 	 * (needs the server's own HYPIXEL_API_KEY, see server/README.md), unlike every other endpoint
-	 * here which is public/cached. estimatedMagicalPower is exactly that - an estimate, not the
-	 * authoritative in-game number - see hypixelProfile.js's own doc comment for why.
+	 * here which is public/cached. magicalPower is Hypixel's own already-computed total (confirmed
+	 * live 2026-09-21 against a real profile - accessory_bag_storage.highest_magical_power), not
+	 * something this project estimates - each Accessory's own magicalPower is still only this
+	 * project's rarity-based approximation, used for sorting/display, since the API doesn't expose
+	 * a per-item breakdown.
 	 */
 	public CompletableFuture<AccessorySummary> fetchAccessories(String username) {
 		String url = baseUrl + "/api/profile/" + java.net.URLEncoder.encode(username, java.nio.charset.StandardCharsets.UTF_8) + "/accessories";
@@ -209,7 +212,7 @@ public class ScdApiClient {
 					return new AccessorySummary(
 							body.get("username").getAsString(),
 							body.get("accessoryCount").getAsInt(),
-							body.get("estimatedMagicalPower").getAsInt(),
+							body.get("magicalPower").getAsInt(),
 							accessories);
 				});
 	}

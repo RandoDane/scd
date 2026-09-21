@@ -164,7 +164,7 @@ public class ScdAccessoryScreen extends Screen {
 		}
 		if (summaryLabelY >= 0) {
 			var summary = client.accessoryData().summary();
-			String text = summary.accessoryCount() + " accessories - Magical Power (estimate): " + summary.estimatedMagicalPower();
+			String text = summary.accessoryCount() + " accessories - Magical Power: " + summary.magicalPower();
 			ScdTheme.label(g, this.font, text, panelX + PADDING, summaryLabelY, ScdTheme.TEXT_PRIMARY);
 		}
 		for (RowLabel row : rowLabels) {
