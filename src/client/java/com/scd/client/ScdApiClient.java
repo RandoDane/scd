@@ -1,6 +1,7 @@
 package com.scd.client;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -174,17 +175,19 @@ public class ScdApiClient {
 	public record Accessory(String id, String name, String rarity, int magicalPower, int count) {
 	}
 
-	public record AccessorySummary(String username, int accessoryCount, int magicalPower, List<Accessory> accessories) {
+	public record AccessorySummary(String username, int accessoryCount, Integer peakMagicalPower, List<Accessory> accessories) {
 	}
 
 	/**
 	 * GETs /api/profile/{username}/accessories - a live, per-player, authenticated Hypixel lookup
 	 * (needs the server's own HYPIXEL_API_KEY, see server/README.md), unlike every other endpoint
-	 * here which is public/cached. magicalPower is Hypixel's own already-computed total (confirmed
-	 * live 2026-09-21 against a real profile - accessory_bag_storage.highest_magical_power), not
-	 * something this project estimates - each Accessory's own magicalPower is still only this
-	 * project's rarity-based approximation, used for sorting/display, since the API doesn't expose
-	 * a per-item breakdown.
+	 * here which is public/cached.
+	 *
+	 * CORRECTED 2026-09-21: peakMagicalPower is Hypixel's own lifetime-PEAK Accessory Power, not the
+	 * player's current total - confirmed wrong live (1621 peak reported vs 1520 actual current, same
+	 * account) after originally being treated as authoritative. There's no known API field for the
+	 * live current total, so ScdAccessoryScreen must show this labelled clearly as a peak, never as
+	 * "your Magical Power" - see FEATURE_ROADMAP.md §13 for the real fix (an in-game bag scan).
 	 */
 	public CompletableFuture<AccessorySummary> fetchAccessories(String username) {
 		String url = baseUrl + "/api/profile/" + java.net.URLEncoder.encode(username, java.nio.charset.StandardCharsets.UTF_8) + "/accessories";
@@ -209,10 +212,12 @@ public class ScdApiClient {
 								o.get("magicalPower").getAsInt(),
 								o.get("count").getAsInt()));
 					}
+					JsonElement peakEl = body.get("peakMagicalPower");
+					Integer peak = peakEl != null && !peakEl.isJsonNull() ? peakEl.getAsInt() : null;
 					return new AccessorySummary(
 							body.get("username").getAsString(),
 							body.get("accessoryCount").getAsInt(),
-							body.get("magicalPower").getAsInt(),
+							peak,
 							accessories);
 				});
 	}

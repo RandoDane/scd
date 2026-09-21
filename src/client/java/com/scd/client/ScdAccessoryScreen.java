@@ -33,6 +33,7 @@ public class ScdAccessoryScreen extends Screen {
 	}
 
 	private final Screen parent;
+	private final ScdConfig config;
 	private final ScdClient client;
 	private int page = 0;
 	private ScdAccessoryData.Status lastSeenStatus;
@@ -41,10 +42,12 @@ public class ScdAccessoryScreen extends Screen {
 	private int summaryLabelY = -1;
 	private int statusLabelY = -1;
 	private int pageLabelY = -1;
+	private int missingOverlayLabelY = -1;
 	private final List<RowLabel> rowLabels = new ArrayList<>();
 
-	public ScdAccessoryScreen(Screen parent, ScdClient client) {
+	public ScdAccessoryScreen(Screen parent, ScdConfig config, ScdClient client) {
 		super(Component.literal("SCD - Accessories"));
+		this.config = config;
 		this.parent = parent;
 		this.client = client;
 	}
@@ -84,11 +87,24 @@ public class ScdAccessoryScreen extends Screen {
 		}
 		y += 6;
 
+		// Gates a planned feature (see ScdConfig.Accessories' own doc comment) - the toggle already
+		// exists and persists even though the scan/overlay it controls isn't built yet, so it's ready
+		// the moment that lands instead of needing a second config-plumbing pass.
+		missingOverlayLabelY = y + 3;
+		addRenderableWidget(new ScdToggle(contentX + fieldWidth - 26, y, Component.literal("Missing accessories overlay"),
+				ScdTheme.ACCENT_ACCESSORIES, config.accessories.missingAccessoriesOverlayEnabled,
+				v -> config.accessories.missingAccessoriesOverlayEnabled = v));
+		y += ROW_HEIGHT + 6;
+
 		int buttonWidth = (fieldWidth - 8) / 2;
-		addRenderableWidget(new ScdButton(contentX, y, buttonWidth, 16, Component.literal("Back"), ScdTheme.ACCENT_ACCESSORIES, () ->
-				Minecraft.getInstance().setScreen(parent)));
-		addRenderableWidget(new ScdButton(contentX + buttonWidth + 8, y, buttonWidth, 16, Component.literal("Close"), ScdTheme.ACCENT_ACCESSORIES, () ->
-				Minecraft.getInstance().setScreen(null)));
+		addRenderableWidget(new ScdButton(contentX, y, buttonWidth, 16, Component.literal("Back"), ScdTheme.ACCENT_ACCESSORIES, () -> {
+			config.save();
+			Minecraft.getInstance().setScreen(parent);
+		}));
+		addRenderableWidget(new ScdButton(contentX + buttonWidth + 8, y, buttonWidth, 16, Component.literal("Close"), ScdTheme.ACCENT_ACCESSORIES, () -> {
+			config.save();
+			Minecraft.getInstance().setScreen(null);
+		}));
 		y += 16;
 
 		panelHeight = y + PADDING - panelY;
@@ -164,12 +180,17 @@ public class ScdAccessoryScreen extends Screen {
 		}
 		if (summaryLabelY >= 0) {
 			var summary = client.accessoryData().summary();
-			String text = summary.accessoryCount() + " accessories - Magical Power: " + summary.magicalPower();
+			// peakMagicalPower is Hypixel's own lifetime-best figure, NOT the current total (confirmed
+			// wrong live when first shown as "Magical Power" outright - see ScdApiClient.fetchAccessories)
+			// - labelled explicitly as a peak here so it's never mistaken for the live number again.
+			String peakSuffix = summary.peakMagicalPower() != null ? " (peak Accessory Power ever: " + summary.peakMagicalPower() + ")" : "";
+			String text = summary.accessoryCount() + " accessories" + peakSuffix;
 			ScdTheme.label(g, this.font, text, panelX + PADDING, summaryLabelY, ScdTheme.TEXT_PRIMARY);
 		}
 		for (RowLabel row : rowLabels) {
 			ScdTheme.label(g, this.font, row.text(), panelX + PADDING, row.y(), row.color());
 		}
+		ScdTheme.label(g, this.font, "Missing accessories overlay", panelX + PADDING, missingOverlayLabelY, ScdTheme.TEXT_SECONDARY);
 		if (pageLabelY >= 0) {
 			var accessories = client.accessoryData().summary().accessories();
 			int pageCount = Math.max(1, (accessories.size() + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE);

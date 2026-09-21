@@ -116,7 +116,7 @@ public class ScdConfigScreen extends Screen {
 				Component.literal("Accessories"), "Your accessory bag + estimated Magical Power", ScdTheme.ACCENT_ACCESSORIES, () -> {
 					applyServerUrlFieldIfPresent();
 					config.save();
-					Minecraft.getInstance().setScreen(new ScdAccessoryScreen(this, client));
+					Minecraft.getInstance().setScreen(new ScdAccessoryScreen(this, config, client));
 				}));
 		y += ROW_HEIGHT + 4;
 

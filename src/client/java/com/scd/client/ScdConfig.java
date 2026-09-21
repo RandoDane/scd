@@ -40,6 +40,7 @@ public class ScdConfig {
 
 	public Bazaar bazaar = new Bazaar();
 	public Slayer slayer = new Slayer();
+	public Accessories accessories = new Accessories();
 
 	// Gates the diagnostic/debug commands (see ScdClient.registerCommands) behind /scd dev <code>, so
 	// the command list doesn't look bloated with internal-only tools when handed to someone who isn't
@@ -53,6 +54,14 @@ public class ScdConfig {
 		public boolean graphEnabled = true;
 		public String graphRange = "7d";
 		public Pos graphPosition = new Pos(8, 8);
+	}
+
+	public static class Accessories {
+		// Gates the planned "Missing Accessories" panel next to the vanilla Accessory Bag menu (a live
+		// in-game GUI scan compared against a master accessory list - see FEATURE_ROADMAP.md §13,
+		// not built yet as of this field's addition). Off by default like any new, not-yet-verified
+		// overlay - opt in once it exists rather than surprising anyone with an unfinished feature.
+		public boolean missingAccessoriesOverlayEnabled = false;
 	}
 
 	public static class Slayer {
