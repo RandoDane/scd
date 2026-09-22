@@ -66,8 +66,8 @@ public class ScdClient implements ClientModInitializer {
 	// Accessory Bag screen isn't ours to addRenderableWidget() into, so these are driven manually:
 	// extractRenderState() called from renderAccessoryBagOverlay, mouseClicked() called from the
 	// ScreenMouseEvents.allowMouseClick hook registered alongside it (see handleAccessoryOverlayClick).
-	private final ScdButton missingAccessoriesPrevButton = new ScdButton(0, 0, 16, 16, Component.literal("<"), ScdTheme.ACCENT_ACCESSORIES, () -> missingAccessoriesPage--);
-	private final ScdButton missingAccessoriesNextButton = new ScdButton(0, 0, 16, 16, Component.literal(">"), ScdTheme.ACCENT_ACCESSORIES, () -> missingAccessoriesPage++);
+	private final ScdButton missingAccessoriesPrevButton = new ScdButton(0, 0, 16, 16, Component.literal("< Prev"), ScdTheme.ACCENT_ACCESSORIES, () -> missingAccessoriesPage--);
+	private final ScdButton missingAccessoriesNextButton = new ScdButton(0, 0, 16, 16, Component.literal("Next >"), ScdTheme.ACCENT_ACCESSORIES, () -> missingAccessoriesPage++);
 	// Throwaway proof-of-concept for the entity-glow mixin (see FEATURE_ROADMAP.md's "T2/T3
 	// re-scoped" section) - /scd debug glowtest toggles this, the registered adder below does the
 	// rest. Remove alongside its adder/command once confirmed live.
@@ -977,6 +977,25 @@ public class ScdClient implements ClientModInitializer {
 	}
 
 	/**
+	 * Drops anything accessoryBagWatcher has already scanned live this session from the missing list.
+	 * The missing list itself comes from a Hypixel profile snapshot fetched once per bag-open (see
+	 * refreshAccessories()/accessoryData), which goes stale the moment the player picks up something
+	 * new mid-session - confirmed live 2026-09-22, an added Beastmaster Crest kept showing as missing
+	 * until the whole screen was reopened. The live scan is always current, so it wins on conflict.
+	 * Matched by display name rather than SkyBlock id, same as accessoryBagWatcher's own scanned map -
+	 * lore has no id to read, only the name (see its class doc for why that's an accepted tradeoff
+	 * there already).
+	 */
+	private List<ScdApiClient.MissingAccessory> excludeLiveScanned(List<ScdApiClient.MissingAccessory> missing) {
+		if (missing.isEmpty()) return missing;
+		var scannedNames = accessoryBagWatcher.accessories().stream()
+				.map(ScdAccessoryBagWatcher.ScannedAccessory::name)
+				.collect(java.util.stream.Collectors.toSet());
+		if (scannedNames.isEmpty()) return missing;
+		return missing.stream().filter(m -> !scannedNames.contains(m.name())).toList();
+	}
+
+	/**
 	 * Missing accessories sorted rarity-first (best/rarest missing item at the top - the one most
 	 * worth going after), name as the tiebreak. An unknown/missing tier (rarityRank -1) sorts last
 	 * rather than crashing a null comparison.
@@ -1005,7 +1024,7 @@ public class ScdClient implements ClientModInitializer {
 
 		boolean missingLoaded = accessoryData.status() == ScdAccessoryData.Status.LOADED;
 		List<ScdApiClient.MissingAccessory> missing = missingLoaded
-				? sortedMissingAccessories(accessoryData.summary().missingAccessories())
+				? sortedMissingAccessories(excludeLiveScanned(accessoryData.summary().missingAccessories()))
 				: List.of();
 		int pageCount = Math.max(1, (missing.size() + MISSING_ACCESSORIES_PAGE_SIZE - 1) / MISSING_ACCESSORIES_PAGE_SIZE);
 		missingAccessoriesPage = Math.max(0, Math.min(missingAccessoriesPage, pageCount - 1));
@@ -1014,9 +1033,14 @@ public class ScdClient implements ClientModInitializer {
 		int missingRowCount = missingLoaded ? Math.max(1, to - from) : 1;
 		boolean showNav = missingLoaded && missing.size() > MISSING_ACCESSORIES_PAGE_SIZE;
 
-		int scanLines = 3; // Scanned/Pages line + (Accessory Power or "keep browsing") line + missing-header line
-		int contentLines = scanLines + missingRowCount + (showNav ? 1 : 0);
-		int height = 22 + contentLines * (lineH + 4) + 10 + (showNav ? 18 : 0);
+		// Scanned + Pages + (Accessory Power or "keep browsing") + the "Missing (N)" header, each its
+		// own lineH+4 row - kept as an exact line-for-line mirror of the draw sequence below (including
+		// the +12 section-divider gap and the +26 page-label-plus-button-row when nav is shown) rather
+		// than an approximated constant, after an earlier version of this formula quietly undercounted
+		// the header line and the divider gap, leaving the panel too short for its own content.
+		int fixedLines = 4;
+		int contentLines = fixedLines + missingRowCount;
+		int height = 52 + contentLines * (lineH + 4) + (showNav ? 26 : 0);
 
 		ScdTheme.panel(g, x, y, width, height);
 		ScdTheme.label(g, font, "Accessory Scan", x + 10, y + 10, ScdTheme.TEXT_PRIMARY);
@@ -1065,16 +1089,25 @@ public class ScdClient implements ClientModInitializer {
 		}
 
 		if (showNav) {
+			// Page label on its own row above a matched pair of full-width Prev/Next buttons - same
+			// layout ScdCarryPlayerPickerScreen uses for its own page nav, not the compact flanking-arrow
+			// style (that one's for cycling a single value in place, e.g. ScdCarryFormScreen's type/tier
+			// pickers - a different interaction, wrong fit here).
+			ScdTheme.scaledCenteredText(g, font, Component.literal("Page " + (missingAccessoriesPage + 1) + "/" + pageCount),
+					x + width / 2, ty, ScdTheme.TEXT_MUTED);
+			ty += 10;
+
+			int navWidth = (width - 20 - 8) / 2;
 			missingAccessoriesPrevButton.active = missingAccessoriesPage > 0;
 			missingAccessoriesNextButton.active = missingAccessoriesPage < pageCount - 1;
 			missingAccessoriesPrevButton.setX(x + 10);
 			missingAccessoriesPrevButton.setY(ty);
-			missingAccessoriesNextButton.setX(x + width - 10 - 16);
+			missingAccessoriesPrevButton.setWidth(navWidth);
+			missingAccessoriesNextButton.setX(x + 10 + navWidth + 8);
 			missingAccessoriesNextButton.setY(ty);
+			missingAccessoriesNextButton.setWidth(navWidth);
 			missingAccessoriesPrevButton.extractRenderState(g, mouseX, mouseY, partialTick);
 			missingAccessoriesNextButton.extractRenderState(g, mouseX, mouseY, partialTick);
-			ScdTheme.scaledCenteredText(g, font, Component.literal("Page " + (missingAccessoriesPage + 1) + "/" + pageCount),
-					x + width / 2, ty + 4, ScdTheme.TEXT_MUTED);
 		} else {
 			// Not rendered this frame - also deactivate so a stale click at their last on-screen
 			// position (e.g. right as the list shrinks to fit one page) can't still fire.

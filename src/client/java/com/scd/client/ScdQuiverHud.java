@@ -20,8 +20,19 @@ public class ScdQuiverHud {
 	private static final Identifier ID = Identifier.fromNamespaceAndPath("scd", "quiver_overlay");
 	private static final int BG_COLOR = 0x90000000;
 	private static final int TITLE_COLOR = 0xFF55DDFF;
-	private static final int LABEL_COLOR = 0xFFAAAAAA;
+	// Not `final` - LABEL_COLOR is a plain neutral gray with no semantic meaning (unlike TITLE_COLOR's
+	// cyan or LOW_AMMO_COLOR's red warning, both kept fixed on purpose), so it should theme the same
+	// way ScdTheme.TEXT_SECONDARY does everywhere else - this HUD predates the theme system and drew
+	// straight from graphics.fill()/text() rather than going through ScdTheme at all, so it never
+	// picked up a theme change the way the combined Slayer HUD (via config.slayer.hudColors) already
+	// did.
+	private static int LABEL_COLOR = 0xFFAAAAAA;
 	private static final int LOW_AMMO_COLOR = 0xFFFF5555;
+
+	/** Called from ScdTheme.applyTheme() so this HUD (which predates ScdTheme and never read from it) still re-skins with everything else. */
+	static void applyTheme() {
+		LABEL_COLOR = ScdTheme.TEXT_SECONDARY;
+	}
 	private static final int LOW_AMMO_THRESHOLD = 100;
 	private static final int PADDING = 4;
 	private static final int MIN_WIDTH = 120;

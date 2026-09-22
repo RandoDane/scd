@@ -21,6 +21,10 @@ public class ScdConfigScreen extends Screen {
 	private static final int PADDING = 16;
 	private static final int ROW_HEIGHT = 24;
 	private static final int TOGGLE_ROW_HEIGHT = 18;
+	// ScdCategoryCard's own title+description text needs more vertical room than a single-line
+	// ROW_HEIGHT row does - at 24 the description's own text bottom landed exactly on the card's own
+	// bottom edge (zero padding), reading as "touching the bottom of the box".
+	private static final int CATEGORY_CARD_HEIGHT = 32;
 
 	// The "Themes" box: a small, separate floating panel pinned to the screen's bottom-right corner
 	// rather than a section inside the main panel - a global theme isn't really a "setting" you drill
@@ -101,24 +105,24 @@ public class ScdConfigScreen extends Screen {
 		}
 
 		// --- Slayer (drill-down, too large to nest inline) ---
-		addRenderableWidget(new ScdCategoryCard(contentX, y, fieldWidth, ROW_HEIGHT,
+		addRenderableWidget(new ScdCategoryCard(contentX, y, fieldWidth, CATEGORY_CARD_HEIGHT,
 				Component.literal("Slayer"), "Boss tracker, per-type ability warnings, drops", ScdTheme.ACCENT_SLAYER, () -> {
 					applyServerUrlFieldIfPresent();
 					config.save();
 					Minecraft.getInstance().setScreen(new ScdSlayerConfigScreen(this, config, client));
 				}));
-		y += ROW_HEIGHT + 4;
+		y += CATEGORY_CARD_HEIGHT + 4;
 
 		// --- Accessories (live viewer for now - a Hypixel-API-backed lookup, not a local setting,
 		// so it opens straight into the viewer rather than a settings drill-down; see
 		// FEATURE_ROADMAP.md §13 for what's planned on top of this) ---
-		addRenderableWidget(new ScdCategoryCard(contentX, y, fieldWidth, ROW_HEIGHT,
+		addRenderableWidget(new ScdCategoryCard(contentX, y, fieldWidth, CATEGORY_CARD_HEIGHT,
 				Component.literal("Accessories"), "Your accessory bag + estimated Magical Power", ScdTheme.ACCENT_ACCESSORIES, () -> {
 					applyServerUrlFieldIfPresent();
 					config.save();
 					Minecraft.getInstance().setScreen(new ScdAccessoryScreen(this, config, client));
 				}));
-		y += ROW_HEIGHT + 4;
+		y += CATEGORY_CARD_HEIGHT + 4;
 
 		y += 6;
 		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16, Component.literal("Close"), ScdTheme.ACCENT_BAZAAR, () -> {

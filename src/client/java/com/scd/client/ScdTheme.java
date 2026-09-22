@@ -120,6 +120,12 @@ public final class ScdTheme {
 		TEXT_MUTED = ScdColorSlot.resolve(theme.colors(), ScdSlayerColorSlot.STATS_LABEL);
 		TEXT_PRIMARY = ScdColorSlot.resolve(theme.colors(), ScdSlayerColorSlot.STATS_VALUE);
 		KNOB = TEXT_PRIMARY;
+
+		// A couple of older HUDs predate this class's theming and drew straight from their own
+		// hardcoded colors instead of going through ScdTheme/hudColors - see each one's own
+		// applyTheme() doc comment for why it needs this explicit nudge rather than just reading
+		// ScdTheme fields live like everything newer already does.
+		ScdQuiverHud.applyTheme();
 	}
 
 	// Same rarity colors Hypixel itself uses on item tooltips/chat (standard Minecraft formatting
