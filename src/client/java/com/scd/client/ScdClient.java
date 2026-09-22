@@ -1050,7 +1050,14 @@ public class ScdClient implements ClientModInitializer {
 			for (int i = from; i < to; i++) {
 				var item = missing.get(i);
 				int color = ScdTheme.rarityColor(item.tier());
-				String rowText = item.name() + " (" + ScdTheme.prettyTier(item.tier()) + ")";
+				// A "(Unknown)" tier isn't this project's guess failing - confirmed live 2026-09-22 that
+				// ~37 accessories (mostly base-tier starter Talismans - Speed/Feather/Fire/Zombie
+				// Talisman, the early Campfire/Soul Campfire badges, etc.) genuinely have no `tier` field
+				// at all on Hypixel's own items resource. Rather than guess a rarity for those (risky -
+				// one of the 37, a family's own representative id, is a "_COMMON" variant that STILL has
+				// no tier, so even the name isn't a reliable enough hint), just drop the suffix and let
+				// the muted color speak for itself.
+				String rowText = item.tier() != null ? item.name() + " (" + ScdTheme.prettyTier(item.tier()) + ")" : item.name();
 				ScdTheme.label(g, font, rowText, x + 10, ty, color);
 				ty += lineH + 4;
 			}
