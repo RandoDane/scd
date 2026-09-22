@@ -1052,7 +1052,10 @@ public class ScdClient implements ClientModInitializer {
 	private void renderAccessoryBagOverlay(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
 		int x = 10;
 		int y = 10;
-		int width = 220;
+		// Sized to exactly fit the grid (10px padding each side) instead of a fixed guess - confirmed
+		// live 2026-09-22 that a hardcoded 220 left a visible dead-space gap on the right once the
+		// grid's real width (8 columns of boxes + gaps) came in narrower than that guess.
+		int width = 20 + MISSING_GRID_COLUMNS * MISSING_ICON_BOX_SIZE + (MISSING_GRID_COLUMNS - 1) * MISSING_ICON_GAP;
 		var font = Minecraft.getInstance().font;
 		int lineH = ScdTheme.lineHeight(font);
 
