@@ -12,6 +12,7 @@ import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -21,6 +22,7 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemLore;
 
 import java.util.Comparator;
@@ -60,7 +62,11 @@ public class ScdClient implements ClientModInitializer {
 	// visit apart from paging back to 1 mid-session. Gates accessoryBagWatcher.reset() - see its own
 	// updated doc comment.
 	private boolean accessoryBagSessionOpen = false;
-	private static final int MISSING_ACCESSORIES_PAGE_SIZE = 8;
+	private static final int MISSING_GRID_COLUMNS = 8;
+	private static final int MISSING_GRID_ROWS = 4;
+	private static final int MISSING_ICON_SIZE = 16;
+	private static final int MISSING_ICON_GAP = 4;
+	private static final int MISSING_ACCESSORIES_PAGE_SIZE = MISSING_GRID_COLUMNS * MISSING_GRID_ROWS;
 	private int missingAccessoriesPage = 0;
 	// false (default) = rarity-best-first, i.e. whichever missing tier is closest to "maxed" for
 	// that family, since getMissingAccessories already collapses each family to its single
@@ -1049,15 +1055,18 @@ public class ScdClient implements ClientModInitializer {
 		int to = Math.min(from + MISSING_ACCESSORIES_PAGE_SIZE, missing.size());
 		int missingRowCount = missingLoaded ? Math.max(1, to - from) : 1;
 		boolean showNav = missingLoaded && missing.size() > MISSING_ACCESSORIES_PAGE_SIZE;
+		// Icons instead of text rows, MISSING_GRID_COLUMNS per row - a missing "row" in the layout
+		// math below now means one grid row, not one accessory.
+		int gridRows = missingLoaded ? Math.max(1, (missingRowCount + MISSING_GRID_COLUMNS - 1) / MISSING_GRID_COLUMNS) : 1;
 
 		// Scanned + Pages + (Accessory Power or "keep browsing") + the "Missing (N)" header, each its
-		// own lineH+4 row - kept as an exact line-for-line mirror of the draw sequence below (including
-		// the +12 section-divider gap and the +26 page-label-plus-button-row when nav is shown) rather
-		// than an approximated constant, after an earlier version of this formula quietly undercounted
-		// the header line and the divider gap, leaving the panel too short for its own content.
+		// own lineH+4 row, plus the icon grid's own rows - kept as an exact line-for-line mirror of the
+		// draw sequence below (including the +12 section-divider gap and the +26 page-label-plus-
+		// button-row when nav is shown) rather than an approximated constant, after an earlier version
+		// of this formula quietly undercounted the header line and the divider gap, leaving the panel
+		// too short for its own content.
 		int fixedLines = 4;
-		int contentLines = fixedLines + missingRowCount;
-		int height = 52 + contentLines * (lineH + 4) + (showNav ? 26 : 0);
+		int height = 52 + fixedLines * (lineH + 4) + gridRows * (MISSING_ICON_SIZE + MISSING_ICON_GAP) + (showNav ? 26 : 0);
 
 		ScdTheme.panel(g, x, y, width, height);
 		ScdTheme.label(g, font, "Accessory Helper", x + 10, y + 10, ScdTheme.TEXT_PRIMARY);
@@ -1098,22 +1107,27 @@ public class ScdClient implements ClientModInitializer {
 		}
 		ty += lineH + 4;
 
+		// Hovered while walking the grid below, tooltip drawn last (after the nav row) so it always
+		// paints on top rather than being drawn-over by whatever comes after it.
+		ScdApiClient.MissingAccessory hovered = null;
 		if (missingLoaded) {
+			int col = 0;
 			for (int i = from; i < to; i++) {
 				var item = missing.get(i);
-				int color = ScdTheme.rarityColor(item.tier());
-				// A "(Unknown)" tier isn't this project's guess failing - confirmed live 2026-09-22 that
-				// ~37 accessories (mostly base-tier starter Talismans - Speed/Feather/Fire/Zombie
-				// Talisman, the early Campfire/Soul Campfire badges, etc.) genuinely have no `tier` field
-				// at all on Hypixel's own items resource. Rather than guess a rarity for those (risky -
-				// one of the 37, a family's own representative id, is a "_COMMON" variant that STILL has
-				// no tier, so even the name isn't a reliable enough hint), just drop the suffix and let
-				// the muted color speak for itself.
-				String rowText = item.tier() != null ? item.name() + " (" + ScdTheme.prettyTier(item.tier()) + ")" : item.name();
-				if (item.price() != null) rowText += " - " + ScdFormat.compactCount(Math.round(item.price()));
-				ScdTheme.label(g, font, rowText, x + 10, ty, color);
-				ty += lineH + 4;
+				int cellX = x + 10 + col * (MISSING_ICON_SIZE + MISSING_ICON_GAP);
+				int cellY = ty;
+				ItemStack stack = ScdIcons.resolve(item.icon());
+				g.item(stack, cellX, cellY);
+				if (mouseX >= cellX && mouseX < cellX + MISSING_ICON_SIZE && mouseY >= cellY && mouseY < cellY + MISSING_ICON_SIZE) {
+					hovered = item;
+				}
+				col++;
+				if (col >= MISSING_GRID_COLUMNS) {
+					col = 0;
+					ty += MISSING_ICON_SIZE + MISSING_ICON_GAP;
+				}
 			}
+			if (col != 0) ty += MISSING_ICON_SIZE + MISSING_ICON_GAP; // a partial last row still needs its own height counted
 		}
 
 		if (showNav) {
@@ -1144,6 +1158,22 @@ public class ScdClient implements ClientModInitializer {
 			missingAccessoriesPrevButton.active = false;
 			missingAccessoriesNextButton.active = false;
 		}
+
+		if (hovered != null) renderMissingAccessoryTooltip(g, font, hovered, mouseX, mouseY);
+	}
+
+	/**
+	 * Name / price / how-to-obtain for whichever grid icon the cursor is over - obtainMethod is
+	 * manually curated server-side (accessoryObtainMethods.js) and empty for everything right now,
+	 * so it always shows until that gets filled in by hand.
+	 */
+	private void renderMissingAccessoryTooltip(GuiGraphicsExtractor g, Font font, ScdApiClient.MissingAccessory item, int mouseX, int mouseY) {
+		String priceText = item.price() != null ? "Price: " + ScdFormat.compactCount(Math.round(item.price())) : "Price: unknown";
+		String obtainText = "Obtain: " + (item.obtainMethod() != null ? item.obtainMethod() : "unknown");
+		List<ScdOverlayBox.Line> lines = List.of(
+				new ScdOverlayBox.Line(priceText, ScdTheme.TEXT_SECONDARY),
+				new ScdOverlayBox.Line(obtainText, ScdTheme.TEXT_MUTED));
+		ScdOverlayBox.render(g, font, mouseX + 14, mouseY + 4, item.name(), ScdTheme.rarityColor(item.tier()), lines);
 	}
 
 	/**

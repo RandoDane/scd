@@ -175,8 +175,8 @@ public class ScdApiClient {
 	public record Accessory(String id, String name, String rarity, int magicalPower, int count) {
 	}
 
-	/** tier is the item's rarity (e.g. "LEGENDARY") - used client-side for the missing-accessories overlay's per-row color, see ScdTheme.rarityColor. requirement is a short human-readable unlock condition (e.g. "Revenant Slayer 8"), or null if the item has none - see server/src/routes/api.js's describeRequirement. A non-null requirement doesn't mean the player fails it, just that one exists; the server doesn't currently fetch player stats to check it. price is the servers own bazaar-or-auction lookup (§14) in raw coins, null if neither market has data for it. */
-	public record MissingAccessory(String id, String name, String tier, String requirement, Double price) {
+	/** tier is the item's rarity (e.g. "LEGENDARY") - used client-side for the missing-accessories overlay's per-row color, see ScdTheme.rarityColor. requirement is a short human-readable unlock condition (e.g. "Revenant Slayer 8"), or null if the item has none - see server/src/routes/api.js's describeRequirement. A non-null requirement doesn't mean the player fails it, just that one exists; the server doesn't currently fetch player stats to check it. price is the servers own bazaar-or-auction lookup (§14) in raw coins, null if neither market has data for it. icon resolves to a real ItemStack via ScdIcons.resolve for the grid overlay. obtainMethod is manually curated server-side (accessoryObtainMethods.js) - null for anything not filled in yet. */
+	public record MissingAccessory(String id, String name, String tier, String requirement, Double price, Icon icon, String obtainMethod) {
 	}
 
 	/**
@@ -232,7 +232,8 @@ public class ScdApiClient {
 					if (missingArr != null) {
 						for (var el : missingArr) {
 							JsonObject o = el.getAsJsonObject();
-							missing.add(new MissingAccessory(o.get("id").getAsString(), o.get("name").getAsString(), nullableString(o, "tier"), nullableString(o, "requirement"), nullableDouble(o, "price")));
+							JsonObject iconObj = o.has("icon") && o.get("icon").isJsonObject() ? o.getAsJsonObject("icon") : null;
+							missing.add(new MissingAccessory(o.get("id").getAsString(), o.get("name").getAsString(), nullableString(o, "tier"), nullableString(o, "requirement"), nullableDouble(o, "price"), parseIcon(iconObj), nullableString(o, "obtainMethod")));
 						}
 					}
 					return new AccessorySummary(
