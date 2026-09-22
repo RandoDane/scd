@@ -36,7 +36,7 @@ import java.util.regex.Pattern;
  * clears the moment it's actually solved) is the correct behavior, not a bug - reverted.
  *
  * **Also added**: Odin's "virtual completed rooms" - it pads the room-completion count with +1
- * while not yet in the boss room and +1 while the blood door hasn't been opened yet, compensating
+ * while not yet in the boss room and +1 while the blood room hasn't been WON yet, compensating
  * for Hypixel's own Completed Rooms counter lagging reality by up to 2 rooms right at the end.
  * Confirmed by hand-computing Odin's exact formula against this project's own raw tab-list/
  * scoreboard reads from a live side-by-side run and getting Odin's displayed score exactly
@@ -44,6 +44,16 @@ import java.util.regex.Pattern;
  * gap that prompted this correction. "Not yet in boss room" is approximated here as always true
  * (no real boss-room detection exists yet - that needs the room-ID system, still not built) -
  * only wrong for the last stretch of a floor, not the run overall.
+ *
+ * **Correction 2026-09-23, round two**: the blood-room trigger was wired to the wrong message.
+ * "The BLOOD DOOR has been opened!" only marks the START of the Watcher's trial, not its
+ * completion - a live side-by-side comparison caught this directly: our score DROPPED the
+ * instant that message fired (the padding was removed immediately), while Odin's score actually
+ * ROSE once the trial was won (its real Completed Rooms count caught up by more than the padding
+ * it lost). Fixed to key off the trial's real completion message instead - Skyblocker's own real
+ * source uses the identical trigger (`checkMessageForWatcher`): `"[BOSS] The Watcher: You have
+ * proven yourself. You may pass."` - a message this project had already captured live once
+ * before, just not connected to this.
  *
  * **Deliberately NOT copied from Odin**: it never computes a real time-based Speed score at all -
  * `updateScore()` just adds a flat +100, assuming the team is always within budget. This project's
@@ -77,10 +87,13 @@ public final class ScdDungeonScore {
 	private static final Pattern MIMIC_LINE = Pattern.compile(".*?(?:Mimic dead!?|Mimic Killed!)$");
 	private static final Pattern PRINCE_LINE = Pattern.compile(".*?(?:Prince dead!?|Prince Killed!)$|^A Prince falls\\. \\+1 Bonus Score$");
 	private static final Pattern BAT_LINE = Pattern.compile(".*?(?:Bat dead!?|Bat Killed!)$|^A Bat has been slain\\. \\+1 Bonus Score$");
-	// Confirmed live 2026-09-22 (seen in a real capture, see FEATURE_ROADMAP.md §3): the literal
-	// chat line Hypixel sends the instant the blood door opens - used for Odin's "virtual
-	// completed rooms" padding (see class doc).
-	private static final Pattern BLOOD_DOOR_LINE = Pattern.compile("^The BLOOD DOOR has been opened!$");
+	// Corrected 2026-09-23 (see class doc's "blood door" correction): the trigger for Odin's
+	// "virtual completed rooms" padding is the WATCHER TRIAL's completion, not the door opening -
+	// opening it just starts the trial. Matches Skyblocker's own real source exactly
+	// (`checkMessageForWatcher`, `message.equals("[BOSS] The Watcher: You have proven yourself.
+	// You may pass.")`) - confirmed live 2026-09-22 as a genuine message this project has actually
+	// seen (captured during the F6/Sadan runs), just wired to the wrong trigger until now.
+	private static final Pattern BLOOD_ROOM_COMPLETE_LINE = Pattern.compile("^\\[BOSS] The Watcher: You have proven yourself\\. You may pass\\.$");
 
 	/** Secret-requirement % and time budget (seconds) per floor - literal FloorRequirement table from Skyblocker's real source. */
 	private record FloorRequirement(int secretPercent, int timeLimitSeconds) {
@@ -108,28 +121,28 @@ public final class ScdDungeonScore {
 	private static boolean mimicKilled = false;
 	private static boolean princeKilled = false;
 	private static boolean batKilled = false;
-	private static boolean bloodDoorOpened = false;
+	private static boolean bloodRoomCompleted = false;
 
 	private ScdDungeonScore() {
 	}
 
 	/**
-	 * Resets every per-run counter (deaths, mimic/prince/bat, blood door) immediately on a real
+	 * Resets every per-run counter (deaths, mimic/prince/bat, blood room) immediately on a real
 	 * dungeon completion - called from ScdClient.creditDungeonCarries. Added 2026-09-23 as a
 	 * second, more reliable reset trigger alongside computeOrNull()'s own wasInDungeon
 	 * false-to-true check: confirmed live that quick re-queuing ("Click HERE to re-queue") doesn't
 	 * reliably leave the dungeon area long enough for that transition to fire, which let
-	 * bloodDoorOpened (true from a floor that genuinely had one) bleed into the next run and
-	 * under-penalize its Skill/Explore score by skipping the "blood door not opened yet" padding
-	 * it should have gotten. A real run-completion firing is an unambiguous "whatever's next is a
-	 * new run" signal regardless of whether the area-transition check also caught it.
+	 * bloodRoomCompleted (true from a floor that genuinely had one) bleed into the next run and
+	 * under-penalize its Skill/Explore score by skipping the "blood room not done yet" padding it
+	 * should have gotten. A real run-completion firing is an unambiguous "whatever's next is a new
+	 * run" signal regardless of whether the area-transition check also caught it.
 	 */
 	public static void resetRunState() {
 		deaths = 0;
 		mimicKilled = false;
 		princeKilled = false;
 		batKilled = false;
-		bloodDoorOpened = false;
+		bloodRoomCompleted = false;
 	}
 
 	public record ScoreBreakdown(
@@ -146,7 +159,7 @@ public final class ScdDungeonScore {
 			int crypts,
 			int deaths,
 			int incompletePuzzles,
-			boolean bloodDoorOpened) {
+			boolean bloodRoomCompleted) {
 	}
 
 	/** Fed every incoming SYSTEM message by ScdChatPacketMixin, unconditionally - tracks the handful of run events the formula needs that aren't visible on the scoreboard/tab list at all (deaths, mimic/prince/bat kills). */
@@ -159,7 +172,7 @@ public final class ScdDungeonScore {
 		if (MIMIC_LINE.matcher(text).matches()) mimicKilled = true;
 		if (PRINCE_LINE.matcher(text).matches()) princeKilled = true;
 		if (BAT_LINE.matcher(text).matches()) batKilled = true;
-		if (BLOOD_DOOR_LINE.matcher(text).matches()) bloodDoorOpened = true;
+		if (BLOOD_ROOM_COMPLETE_LINE.matcher(text).matches()) bloodRoomCompleted = true;
 	}
 
 	/**
@@ -180,7 +193,7 @@ public final class ScdDungeonScore {
 			mimicKilled = false;
 			princeKilled = false;
 			batKilled = false;
-			bloodDoorOpened = false;
+			bloodRoomCompleted = false;
 		}
 		wasInDungeon = true;
 
@@ -203,8 +216,10 @@ public final class ScdDungeonScore {
 		// Rooms counter lags reality by up to 2 rooms right at the end (blood room + boss room
 		// don't increment it immediately). "Not yet in boss" is approximated as always true - no
 		// real boss-room detection exists yet, so this stays +1 for the whole run except the very
-		// last stretch, which is the same limitation Odin's own unconditional check has.
-		int paddedCompletedRooms = completedRooms + 1 + (bloodDoorOpened ? 0 : 1);
+		// last stretch, which is the same limitation Odin's own unconditional check has. The blood
+		// term only drops once the WATCHER TRIAL is actually won (bloodRoomCompleted), not when the
+		// door is merely opened - see BLOOD_ROOM_COMPLETE_LINE's own comment for the 2026-09-23 fix.
+		int paddedCompletedRooms = completedRooms + 1 + (bloodRoomCompleted ? 0 : 1);
 
 		int skill = calculateSkill(paddedCompletedRooms, totalRooms, incompletePuzzles, deaths);
 		int explore = calculateExplore(paddedCompletedRooms, totalRooms, secretsPercent, requirement.secretPercent());
@@ -216,7 +231,7 @@ public final class ScdDungeonScore {
 				: speed + explore + skill + bonus;
 
 		return new ScoreBreakdown(total, skill, explore, speed, bonus, isEntrance,
-				completedRooms, paddedCompletedRooms, totalRooms, secretsPercent, crypts, deaths, incompletePuzzles, bloodDoorOpened);
+				completedRooms, paddedCompletedRooms, totalRooms, secretsPercent, crypts, deaths, incompletePuzzles, bloodRoomCompleted);
 	}
 
 	private static int calculateSkill(int completedRooms, int totalRooms, int incompletePuzzles, int deaths) {

@@ -1758,7 +1758,7 @@ public class ScdClient implements ClientModInitializer {
 				+ " | rooms=" + breakdown.completedRooms() + "(padded " + breakdown.paddedCompletedRooms() + ")/" + breakdown.totalRoomsEstimate()
 				+ " secrets=" + breakdown.secretsPercent() + "% crypts=" + breakdown.crypts()
 				+ " deaths=" + breakdown.deaths() + " incompletePuzzles=" + breakdown.incompletePuzzles()
-				+ " bloodDoorOpened=" + breakdown.bloodDoorOpened();
+				+ " bloodRoomCompleted=" + breakdown.bloodRoomCompleted();
 		source.sendFeedback(Component.literal(msg));
 		ScdLog.info("=== /scd dungeon debug score === " + msg);
 	}
