@@ -32,11 +32,16 @@ public final class ScdDungeonScore {
 	private static final Pattern SECRETS_PERCENT_LINE = Pattern.compile("Secrets Found:\\s*(\\d+\\.?\\d*)%");
 	private static final Pattern CRYPTS_LINE = Pattern.compile("Crypts:\\s*(\\d+)");
 	private static final Pattern PUZZLE_COUNT_LINE = Pattern.compile("Puzzles:\\s*\\((\\d+)\\)");
-	// Skyblocker's own puzzle-status glyph check ("[✖✦]") came through a mangled encoding on
-	// fetch - "✖" (heavy X) is the confident half (a clearly-failed puzzle); "✦" is a guess at
-	// the second glyph and needs live confirmation, same as this whole tab-list half.
+	// Confirmed live 2026-09-23 (real tab list dump, /scd dungeon debug tablist): an
+	// undiscovered/not-yet-reached puzzle reads `"???: [✦]"` - "✦" means PENDING, not failed. The
+	// original guess here wrongly included "✦" as a fail glyph (copied from Skyblocker's own
+	// pattern, which came through a mangled encoding on fetch and was misread) - that counted
+	// every not-yet-reached puzzle as a failure, inflating the Skill penalty by 10 points each
+	// (confirmed: a run with 2 undiscovered, 0 actually-failed puzzles was scoring 20 points low
+	// versus Odin's own display until this was fixed). "✖" (heavy X) is the remaining guess for
+	// an actually-failed puzzle - still NOT confirmed live, this project hasn't seen one yet.
 	private static final Pattern PUZZLE_LINE = Pattern.compile(".+?: \\[(.)]");
-	private static final String PUZZLE_FAIL_GLYPHS = "✖✦";
+	private static final String PUZZLE_FAIL_GLYPHS = "✖";
 
 	// A real player-death message during a run - NOT the end-of-run "Defeated {boss}" report
 	// (ScdDungeonCompletion handles that separately). Unconfirmed live: this project has never
