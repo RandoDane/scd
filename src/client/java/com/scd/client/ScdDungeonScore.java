@@ -9,7 +9,10 @@ import java.util.regex.Pattern;
  * Live dungeon score estimate - a faithful port of Skyblocker's real `DungeonScore.java`
  * (LGPL-3.0, fetched raw and read directly rather than summarized, see FEATURE_ROADMAP.md §3's
  * 2026-09-23 research pass), not the SkyBlock Wiki's own simplified formula text, which turned
- * out to itself be an approximation of the real, more nuanced logic below.
+ * out to itself be an approximation of the real, more nuanced logic below. Cross-checked
+ * 2026-09-23 against Odin's real source (`DungeonUtils.kt`, also fetched raw) after a live
+ * side-by-side comparison disagreed - Odin's independently-written formula agrees with
+ * Skyblocker's on every point that matters, which is what caught two real mistakes below.
  *
  * Reads three kinds of live data, none of it live-confirmed yet for the tab-list half:
  * - Sidebar scoreboard (ScdDungeonManager): floor, clear %, time elapsed - the same mechanism
@@ -19,8 +22,34 @@ import java.util.regex.Pattern;
  *   genuinely unverified, same "ship the best real-mod-derived guess, confirm live, correct if
  *   wrong" posture as every other new pattern in this project.
  * - Chat (fed by ScdChatPacketMixin, same raw-before-any-other-mod pipeline as
- *   ScdDungeonCompletion): deaths, mimic/prince/bat kills. Also unverified - this project has
- *   never actually seen a real player-death message during a dungeon run yet.
+ *   ScdDungeonCompletion): deaths, mimic/prince/bat kills, and now blood-door-opened. Also
+ *   unverified except blood-door - this project has never actually seen a real player-death
+ *   message during a dungeon run yet.
+ *
+ * **Correction 2026-09-23**: the previous version here treated only the "✖" glyph as a puzzle
+ * penalty, having removed "✦" (the undiscovered-puzzle glyph) on the theory that "not yet
+ * reached" shouldn't count as "failed." That reasoning doesn't hold up: Skyblocker's own,
+ * unmodified pattern counts BOTH glyphs (its variable is literally named `incompletePuzzles`,
+ * not `failedPuzzles`), and Odin's independent formula agrees exactly -
+ * `(puzzleCount - completedCount) * 10`, no distinction between "pending" and "actively failed."
+ * A live, in-progress score treating every not-yet-solved puzzle as a temporary penalty (that
+ * clears the moment it's actually solved) is the correct behavior, not a bug - reverted.
+ *
+ * **Also added**: Odin's "virtual completed rooms" - it pads the room-completion count with +1
+ * while not yet in the boss room and +1 while the blood door hasn't been opened yet, compensating
+ * for Hypixel's own Completed Rooms counter lagging reality by up to 2 rooms right at the end.
+ * Confirmed by hand-computing Odin's exact formula against this project's own raw tab-list/
+ * scoreboard reads from a live side-by-side run and getting Odin's displayed score exactly
+ * (161) - this padding, plus reverting the puzzle-penalty mistake above, accounts for the whole
+ * gap that prompted this correction. "Not yet in boss room" is approximated here as always true
+ * (no real boss-room detection exists yet - that needs the room-ID system, still not built) -
+ * only wrong for the last stretch of a floor, not the run overall.
+ *
+ * **Deliberately NOT copied from Odin**: it never computes a real time-based Speed score at all -
+ * `updateScore()` just adds a flat +100, assuming the team is always within budget. This project's
+ * own Speed calculation (Skyblocker's real tiered decay) is kept instead, since matching true
+ * Hypixel behavior matters more than matching another mod's simplification - the two will
+ * intentionally diverge once a run goes over its time budget, and that's correct, not a bug.
  *
  * Deliberately does NOT implement the "first death had a Legendary Spirit Pet, so it only costs
  * 1 point instead of 2" refinement Skyblocker has - that needs an async SkyBlock profile lookup
@@ -33,15 +62,12 @@ public final class ScdDungeonScore {
 	private static final Pattern CRYPTS_LINE = Pattern.compile("Crypts:\\s*(\\d+)");
 	private static final Pattern PUZZLE_COUNT_LINE = Pattern.compile("Puzzles:\\s*\\((\\d+)\\)");
 	// Confirmed live 2026-09-23 (real tab list dump, /scd dungeon debug tablist): an
-	// undiscovered/not-yet-reached puzzle reads `"???: [✦]"` - "✦" means PENDING, not failed. The
-	// original guess here wrongly included "✦" as a fail glyph (copied from Skyblocker's own
-	// pattern, which came through a mangled encoding on fetch and was misread) - that counted
-	// every not-yet-reached puzzle as a failure, inflating the Skill penalty by 10 points each
-	// (confirmed: a run with 2 undiscovered, 0 actually-failed puzzles was scoring 20 points low
-	// versus Odin's own display until this was fixed). "✖" (heavy X) is the remaining guess for
-	// an actually-failed puzzle - still NOT confirmed live, this project hasn't seen one yet.
+	// undiscovered/not-yet-reached puzzle reads `"???: [✦]"`. BOTH glyphs count toward the
+	// penalty (see the class doc's 2026-09-23 correction) - "✦" = not yet reached/solved, "✖" =
+	// actively failed (still unconfirmed live, this project hasn't seen one yet), neither is
+	// "done" so both count against the live estimate until actually completed.
 	private static final Pattern PUZZLE_LINE = Pattern.compile(".+?: \\[(.)]");
-	private static final String PUZZLE_FAIL_GLYPHS = "✖";
+	private static final String PUZZLE_INCOMPLETE_GLYPHS = "✖✦";
 
 	// A real player-death message during a run - NOT the end-of-run "Defeated {boss}" report
 	// (ScdDungeonCompletion handles that separately). Unconfirmed live: this project has never
@@ -51,6 +77,10 @@ public final class ScdDungeonScore {
 	private static final Pattern MIMIC_LINE = Pattern.compile(".*?(?:Mimic dead!?|Mimic Killed!)$");
 	private static final Pattern PRINCE_LINE = Pattern.compile(".*?(?:Prince dead!?|Prince Killed!)$|^A Prince falls\\. \\+1 Bonus Score$");
 	private static final Pattern BAT_LINE = Pattern.compile(".*?(?:Bat dead!?|Bat Killed!)$|^A Bat has been slain\\. \\+1 Bonus Score$");
+	// Confirmed live 2026-09-22 (seen in a real capture, see FEATURE_ROADMAP.md §3): the literal
+	// chat line Hypixel sends the instant the blood door opens - used for Odin's "virtual
+	// completed rooms" padding (see class doc).
+	private static final Pattern BLOOD_DOOR_LINE = Pattern.compile("^The BLOOD DOOR has been opened!$");
 
 	/** Secret-requirement % and time budget (seconds) per floor - literal FloorRequirement table from Skyblocker's real source. */
 	private record FloorRequirement(int secretPercent, int timeLimitSeconds) {
@@ -78,6 +108,7 @@ public final class ScdDungeonScore {
 	private static boolean mimicKilled = false;
 	private static boolean princeKilled = false;
 	private static boolean batKilled = false;
+	private static boolean bloodDoorOpened = false;
 
 	private ScdDungeonScore() {
 	}
@@ -107,6 +138,7 @@ public final class ScdDungeonScore {
 		if (MIMIC_LINE.matcher(text).matches()) mimicKilled = true;
 		if (PRINCE_LINE.matcher(text).matches()) princeKilled = true;
 		if (BAT_LINE.matcher(text).matches()) batKilled = true;
+		if (BLOOD_DOOR_LINE.matcher(text).matches()) bloodDoorOpened = true;
 	}
 
 	/**
@@ -127,6 +159,7 @@ public final class ScdDungeonScore {
 			mimicKilled = false;
 			princeKilled = false;
 			batKilled = false;
+			bloodDoorOpened = false;
 		}
 		wasInDungeon = true;
 
@@ -145,8 +178,15 @@ public final class ScdDungeonScore {
 		double clearFraction = state.clearPercent() != null ? state.clearPercent() / 100.0 : 0;
 		int totalRooms = clearFraction > 0 ? (int) Math.round(completedRooms / clearFraction) : 0;
 
-		int skill = calculateSkill(completedRooms, totalRooms, incompletePuzzles, deaths);
-		int explore = calculateExplore(completedRooms, totalRooms, secretsPercent, requirement.secretPercent());
+		// Odin's "virtual completed rooms" compensation (see class doc) - Hypixel's own Completed
+		// Rooms counter lags reality by up to 2 rooms right at the end (blood room + boss room
+		// don't increment it immediately). "Not yet in boss" is approximated as always true - no
+		// real boss-room detection exists yet, so this stays +1 for the whole run except the very
+		// last stretch, which is the same limitation Odin's own unconditional check has.
+		int paddedCompletedRooms = completedRooms + 1 + (bloodDoorOpened ? 0 : 1);
+
+		int skill = calculateSkill(paddedCompletedRooms, totalRooms, incompletePuzzles, deaths);
+		int explore = calculateExplore(paddedCompletedRooms, totalRooms, secretsPercent, requirement.secretPercent());
 		int speed = calculateSpeed(state.timeElapsedSeconds(), requirement.timeLimitSeconds());
 		int bonus = calculateBonus(crypts, secretsPercent, mayorPerks.hasPerkNamed("EZPZ"));
 
@@ -200,7 +240,7 @@ public final class ScdDungeonScore {
 			Matcher m = PUZZLE_LINE.matcher(line);
 			if (!m.matches()) continue;
 			String glyph = m.group(1);
-			if (PUZZLE_FAIL_GLYPHS.indexOf(glyph) >= 0) count++;
+			if (PUZZLE_INCOMPLETE_GLYPHS.indexOf(glyph) >= 0) count++;
 		}
 		return count;
 	}
