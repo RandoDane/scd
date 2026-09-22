@@ -65,6 +65,15 @@ import java.util.regex.Pattern;
  * 1 point instead of 2" refinement Skyblocker has - that needs an async SkyBlock profile lookup
  * for whoever died, which is real scope on its own. Every death costs the full 2 points here;
  * flagged so the gap is a known simplification, not a silent inaccuracy.
+ *
+ * **Correction 2026-09-23, round three**: past 100% clear (the boss room and beyond - this
+ * project has no real boss-room detection, so 100% clear stands in for it), the total is no
+ * longer this class's own estimate at all - it's Hypixel's own real live score, read straight
+ * off the sidebar (`ScdDungeonManager`'s `liveScore`, confirmed by the account owner to be
+ * accurate from the boss room onward, including after the kill, unlike everywhere earlier in the
+ * run). Added after a live test showed our own estimate kept drifting right around exactly that
+ * transition (both "blood room" bugs above were caught there) - once the real number is on
+ * screen, there's no reason to keep computing a guess instead of just showing it.
  */
 public final class ScdDungeonScore {
 	private static final Pattern COMPLETED_ROOMS_LINE = Pattern.compile("Completed Rooms:\\s*(\\d+)");
@@ -229,6 +238,19 @@ public final class ScdDungeonScore {
 		int total = isEntrance
 				? Math.round(speed * 0.7f) + Math.round(explore * 0.7f) + Math.round(skill * 0.7f) + Math.round(bonus * 0.7f)
 				: speed + explore + skill + bonus;
+
+		// Prefer Hypixel's own real live score once it's actually trustworthy, rather than keep
+		// estimating - confirmed directly by the account owner (see ScdDungeonManager's own class
+		// doc): the sidebar's "Cleared: X% (N)" figure is only accurate once inside the boss room,
+		// but IS accurate from that point on, including after the kill. This project has no real
+		// boss-room detection yet, so 100% clear is used as the proxy signal for "trust it now."
+		// Confirmed live 2026-09-23 this matters: our own estimate kept drifting right around this
+		// exact transition (two separate "blood room" timing bugs already found and fixed there),
+		// while the real number is simply correct the whole time once available - no reason to keep
+		// guessing once the ground truth is on screen.
+		if (state.clearPercent() != null && state.clearPercent() >= 100 && state.liveScore() != null) {
+			total = state.liveScore();
+		}
 
 		return new ScoreBreakdown(total, skill, explore, speed, bonus, isEntrance,
 				completedRooms, paddedCompletedRooms, totalRooms, secretsPercent, crypts, deaths, incompletePuzzles, bloodRoomCompleted);
