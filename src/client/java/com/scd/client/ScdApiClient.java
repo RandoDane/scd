@@ -175,8 +175,8 @@ public class ScdApiClient {
 	public record Accessory(String id, String name, String rarity, int magicalPower, int count) {
 	}
 
-	/** tier is the item's rarity (e.g. "LEGENDARY") - used client-side for the missing-accessories overlay's per-row color, see ScdTheme.rarityColor. requirement is a short human-readable unlock condition (e.g. "Revenant Slayer 8"), or null if the item has none - see server/src/routes/api.js's describeRequirement. A non-null requirement doesn't mean the player fails it, just that one exists; the server doesn't currently fetch player stats to check it. */
-	public record MissingAccessory(String id, String name, String tier, String requirement) {
+	/** tier is the item's rarity (e.g. "LEGENDARY") - used client-side for the missing-accessories overlay's per-row color, see ScdTheme.rarityColor. requirement is a short human-readable unlock condition (e.g. "Revenant Slayer 8"), or null if the item has none - see server/src/routes/api.js's describeRequirement. A non-null requirement doesn't mean the player fails it, just that one exists; the server doesn't currently fetch player stats to check it. price is the servers own bazaar-or-auction lookup (§14) in raw coins, null if neither market has data for it. */
+	public record MissingAccessory(String id, String name, String tier, String requirement, Double price) {
 	}
 
 	/**
@@ -232,7 +232,7 @@ public class ScdApiClient {
 					if (missingArr != null) {
 						for (var el : missingArr) {
 							JsonObject o = el.getAsJsonObject();
-							missing.add(new MissingAccessory(o.get("id").getAsString(), o.get("name").getAsString(), nullableString(o, "tier"), nullableString(o, "requirement")));
+							missing.add(new MissingAccessory(o.get("id").getAsString(), o.get("name").getAsString(), nullableString(o, "tier"), nullableString(o, "requirement"), nullableDouble(o, "price")));
 						}
 					}
 					return new AccessorySummary(
@@ -264,6 +264,10 @@ public class ScdApiClient {
 				icon.has("durability") && !icon.get("durability").isJsonNull() ? icon.get("durability").getAsInt() : null,
 				skin != null ? nullableString(skin, "value") : null,
 				skin != null ? nullableString(skin, "signature") : null);
+	}
+
+	private static Double nullableDouble(JsonObject obj, String key) {
+		return obj.has(key) && !obj.get(key).isJsonNull() ? obj.get(key).getAsDouble() : null;
 	}
 
 	private static String nullableString(JsonObject obj, String key) {
