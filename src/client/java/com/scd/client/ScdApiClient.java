@@ -175,8 +175,8 @@ public class ScdApiClient {
 	public record Accessory(String id, String name, String rarity, int magicalPower, int count) {
 	}
 
-	/** tier is the item's rarity (e.g. "LEGENDARY") - used client-side for the missing-accessories overlay's per-row color, see ScdTheme.rarityColor. requirement is a short human-readable unlock condition (e.g. "Revenant Slayer 8"), or null if the item has none - see server/src/routes/api.js's describeRequirement. A non-null requirement doesn't mean the player fails it, just that one exists; the server doesn't currently fetch player stats to check it. price is the servers own bazaar-or-auction lookup (§14) in raw coins, null if neither market has data for it. icon resolves to a real ItemStack via ScdIcons.resolve for the grid overlay. obtainMethod is manually curated server-side (accessoryObtainMethods.js) - null for anything not filled in yet. */
-	public record MissingAccessory(String id, String name, String tier, String requirement, Double price, Icon icon, String obtainMethod) {
+	/** tier is the item's rarity (e.g. "LEGENDARY") - used client-side for the missing-accessories overlay's per-row color, see ScdTheme.rarityColor. requirement is a short human-readable unlock condition (e.g. "Revenant Slayer 8"), or null if the item has none - see server/src/routes/api.js's describeRequirement. A non-null requirement doesn't mean the player fails it, just that one exists; the server doesn't currently fetch player stats to check it. price is the servers own bazaar-or-auction lookup (§14) in raw coins, null if neither market has data for it. icon resolves to a real ItemStack via ScdIcons.resolve for the grid overlay. obtainMethod is manually curated server-side (accessoryObtainMethods.js) - null for anything not filled in yet. magicalPowerGain is the actual Magical Power a player would gain from this specific entry - the tier's own estimated MP for a fully missing family, or that minus whatever tier they already own for an upgrade (see upgrade below), so price/magicalPowerGain always means "real marginal cost per MP", not the item's total power in isolation. upgrade is true when the player already owns a lower tier of this family (this entry is the next tier up, not a from-scratch purchase). */
+	public record MissingAccessory(String id, String name, String tier, String requirement, Double price, Icon icon, String obtainMethod, int magicalPowerGain, boolean upgrade) {
 	}
 
 	/**
@@ -233,7 +233,7 @@ public class ScdApiClient {
 						for (var el : missingArr) {
 							JsonObject o = el.getAsJsonObject();
 							JsonObject iconObj = o.has("icon") && o.get("icon").isJsonObject() ? o.getAsJsonObject("icon") : null;
-							missing.add(new MissingAccessory(o.get("id").getAsString(), o.get("name").getAsString(), nullableString(o, "tier"), nullableString(o, "requirement"), nullableDouble(o, "price"), parseIcon(iconObj), nullableString(o, "obtainMethod")));
+							missing.add(new MissingAccessory(o.get("id").getAsString(), o.get("name").getAsString(), nullableString(o, "tier"), nullableString(o, "requirement"), nullableDouble(o, "price"), parseIcon(iconObj), nullableString(o, "obtainMethod"), o.get("magicalPowerGain").getAsInt(), o.get("upgrade").getAsBoolean()));
 						}
 					}
 					return new AccessorySummary(

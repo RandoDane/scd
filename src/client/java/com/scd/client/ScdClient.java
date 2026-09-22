@@ -70,11 +70,18 @@ public class ScdClient implements ClientModInitializer {
 	private static final int MISSING_ICON_GAP = 2;
 	private static final int MISSING_ACCESSORIES_PAGE_SIZE = MISSING_GRID_COLUMNS * MISSING_GRID_ROWS;
 	private int missingAccessoriesPage = 0;
-	// false (default) = rarity-best-first, i.e. whichever missing tier is closest to "maxed" for
-	// that family, since getMissingAccessories already collapses each family to its single
-	// highest-rarity missing representative - true = price high-to-low, using the servers own
-	// bazaar-or-auction price (§14).
-	private boolean sortMissingByPrice = false;
+	/**
+	 * MAX (default): rarity-best-first, i.e. whichever missing tier is closest to "maxed" for that
+	 * family, since getMissingAccessories already collapses each family to its single highest-rarity
+	 * missing (or next-upgrade) representative. PRICE: lowest coin cost first, the cheapest talismans
+	 * to actually go buy right now. BEST: lowest coins-per-Magical-Power first (price /
+	 * magicalPowerGain - the real marginal cost of the power this purchase adds, see
+	 * MissingAccessory's own doc comment), the best value regardless of raw price - entries with no
+	 * price data sort last (there's nothing to rank them by) rather than being hidden outright, so
+	 * "how many things are missing" still reads correctly even in this mode.
+	 */
+	private enum MissingSortMode { MAX, PRICE, BEST }
+	private MissingSortMode missingSortMode = MissingSortMode.MAX;
 	// Instantiated once and repositioned/toggled each frame rather than per-screen - the vanilla
 	// Accessory Bag screen isn't ours to addRenderableWidget() into, so these are driven manually:
 	// extractRenderState() called from renderAccessoryBagOverlay, mouseClicked() called from the
@@ -85,8 +92,8 @@ public class ScdClient implements ClientModInitializer {
 	// see ScdButton.setAccentColor's own doc comment. Any new button added here needs the same care.
 	private final ScdButton missingAccessoriesPrevButton = new ScdButton(0, 0, 16, 16, Component.literal("< Prev"), ScdTheme.ACCENT_ACCESSORIES, () -> missingAccessoriesPage--);
 	private final ScdButton missingAccessoriesNextButton = new ScdButton(0, 0, 16, 16, Component.literal("Next >"), ScdTheme.ACCENT_ACCESSORIES, () -> missingAccessoriesPage++);
-	private final ScdButton missingAccessoriesSortButton = new ScdButton(0, 0, 80, 12, Component.literal("Best first"), ScdTheme.ACCENT_ACCESSORIES, () -> {
-		sortMissingByPrice = !sortMissingByPrice;
+	private final ScdButton missingAccessoriesSortButton = new ScdButton(0, 0, 80, 16, Component.literal("Max"), ScdTheme.ACCENT_ACCESSORIES, () -> {
+		missingSortMode = MissingSortMode.values()[(missingSortMode.ordinal() + 1) % MissingSortMode.values().length];
 		missingAccessoriesPage = 0;
 	});
 	// Throwaway proof-of-concept for the entity-glow mixin (see FEATURE_ROADMAP.md's "T2/T3
@@ -1017,16 +1024,17 @@ public class ScdClient implements ClientModInitializer {
 	}
 
 	/**
-	 * Missing accessories sorted either rarity-first (best/rarest missing item at the top - the one
-	 * most worth going after, since getMissingAccessories already collapses each family to its
-	 * single highest-rarity missing tier) or price-first (highest coin value first, using the
-	 * server's own §14 price lookup) - name as the tiebreak either way. An unknown/missing
-	 * rarity/price sorts last rather than crashing a null comparison or floating to the top.
+	 * Missing accessories sorted per MissingSortMode (see its own doc comment for what each mode
+	 * means) - name as the tiebreak in every mode. An unknown/missing rarity/price sorts last rather
+	 * than crashing a null comparison or floating to the top.
 	 */
-	private static List<ScdApiClient.MissingAccessory> sortedMissingAccessories(List<ScdApiClient.MissingAccessory> missing, boolean byPrice) {
-		Comparator<ScdApiClient.MissingAccessory> primary = byPrice
-				? Comparator.comparingDouble((ScdApiClient.MissingAccessory m) -> m.price() != null ? m.price() : Double.NEGATIVE_INFINITY).reversed()
-				: Comparator.comparingInt((ScdApiClient.MissingAccessory m) -> ScdTheme.rarityRank(m.tier())).reversed();
+	private static List<ScdApiClient.MissingAccessory> sortedMissingAccessories(List<ScdApiClient.MissingAccessory> missing, MissingSortMode mode) {
+		Comparator<ScdApiClient.MissingAccessory> primary = switch (mode) {
+			case MAX -> Comparator.comparingInt((ScdApiClient.MissingAccessory m) -> ScdTheme.rarityRank(m.tier())).reversed();
+			case PRICE -> Comparator.comparingDouble((ScdApiClient.MissingAccessory m) -> m.price() != null ? m.price() : Double.POSITIVE_INFINITY);
+			case BEST -> Comparator.comparingDouble((ScdApiClient.MissingAccessory m) ->
+					m.price() != null && m.magicalPowerGain() > 0 ? m.price() / m.magicalPowerGain() : Double.POSITIVE_INFINITY);
+		};
 		return missing.stream()
 				.sorted(primary.thenComparing(ScdApiClient.MissingAccessory::name))
 				.toList();
@@ -1049,7 +1057,7 @@ public class ScdClient implements ClientModInitializer {
 
 		boolean missingLoaded = accessoryData.status() == ScdAccessoryData.Status.LOADED;
 		List<ScdApiClient.MissingAccessory> missing = missingLoaded
-				? sortedMissingAccessories(excludeLiveScanned(accessoryData.summary().missingAccessories()), sortMissingByPrice)
+				? sortedMissingAccessories(excludeLiveScanned(accessoryData.summary().missingAccessories()), missingSortMode)
 				: List.of();
 		int pageCount = Math.max(1, (missing.size() + MISSING_ACCESSORIES_PAGE_SIZE - 1) / MISSING_ACCESSORIES_PAGE_SIZE);
 		missingAccessoriesPage = Math.max(0, Math.min(missingAccessoriesPage, pageCount - 1));
@@ -1098,9 +1106,14 @@ public class ScdClient implements ClientModInitializer {
 		};
 		ScdTheme.label(g, font, headerText, x + 10, ty, ScdTheme.TEXT_PRIMARY);
 		if (missingLoaded && !missing.isEmpty()) {
-			missingAccessoriesSortButton.setMessage(Component.literal(sortMissingByPrice ? "Price ↓" : "Best first"));
+			String sortLabel = switch (missingSortMode) {
+				case MAX -> "Max";
+				case PRICE -> "Price ↑";
+				case BEST -> "Best value";
+			};
+			missingAccessoriesSortButton.setMessage(Component.literal(sortLabel));
 			missingAccessoriesSortButton.setX(x + width - 10 - 80);
-			missingAccessoriesSortButton.setY(ty - 1);
+			missingAccessoriesSortButton.setY(ty - 2);
 			missingAccessoriesSortButton.setAccentColor(ScdTheme.ACCENT_ACCESSORIES);
 			missingAccessoriesSortButton.active = true;
 			missingAccessoriesSortButton.extractRenderState(g, mouseX, mouseY, partialTick);
@@ -1173,17 +1186,26 @@ public class ScdClient implements ClientModInitializer {
 	}
 
 	/**
-	 * Name / price / how-to-obtain for whichever grid icon the cursor is over - obtainMethod is
-	 * manually curated server-side (accessoryObtainMethods.js) and empty for everything right now,
-	 * so it always shows until that gets filled in by hand.
+	 * Name / price / price-per-Magical-Power / how-to-obtain for whichever grid icon the cursor is
+	 * over. obtainMethod is manually curated server-side (accessoryObtainMethods.js) and empty for
+	 * everything right now, so it always shows until that gets filled in by hand. Price/MP uses
+	 * magicalPowerGain, not the item's total power - for an upgrade entry (owning a lower tier
+	 * already) that's the power this purchase actually *adds*, not the target tier's power in
+	 * isolation, so the ratio means the same real thing whether this is a fresh accessory or an
+	 * upgrade.
 	 */
 	private void renderMissingAccessoryTooltip(GuiGraphicsExtractor g, Font font, ScdApiClient.MissingAccessory item, int mouseX, int mouseY) {
 		String priceText = item.price() != null ? "Price: " + ScdFormat.compactCount(Math.round(item.price())) : "Price: unknown";
+		String ratioText = item.price() != null && item.magicalPowerGain() > 0
+				? "Price/MP: " + ScdFormat.compactCount(Math.round(item.price() / item.magicalPowerGain()))
+				: "Price/MP: unknown";
 		String obtainText = "Obtain: " + (item.obtainMethod() != null ? item.obtainMethod() : "unknown");
 		List<ScdOverlayBox.Line> lines = List.of(
 				new ScdOverlayBox.Line(priceText, ScdTheme.TEXT_SECONDARY),
+				new ScdOverlayBox.Line(ratioText, ScdTheme.TEXT_SECONDARY),
 				new ScdOverlayBox.Line(obtainText, ScdTheme.TEXT_MUTED));
-		ScdOverlayBox.render(g, font, mouseX + 14, mouseY + 4, item.name(), ScdTheme.rarityColor(item.tier()), lines);
+		String title = item.upgrade() ? item.name() + " (Upgrade)" : item.name();
+		ScdOverlayBox.render(g, font, mouseX + 14, mouseY + 4, title, ScdTheme.rarityColor(item.tier()), lines);
 	}
 
 	/**
