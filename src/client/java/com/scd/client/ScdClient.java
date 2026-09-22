@@ -48,6 +48,7 @@ public class ScdClient implements ClientModInitializer {
 	private ScdSlayerStatsHud slayerStatsHud;
 	private final ScdQuiverTracker quiverTracker = new ScdQuiverTracker(slayerTracker);
 	private ScdQuiverHud quiverHud;
+	private ScdDungeonScoreHud dungeonScoreHud;
 	private ScdSlayerRngMeter slayerRngMeter;
 	private ScdSlayerDrops slayerDrops;
 	private ScdCarryQueue carryQueue;
@@ -190,6 +191,8 @@ public class ScdClient implements ClientModInitializer {
 		});
 		quiverHud = new ScdQuiverHud(config, quiverTracker);
 		quiverHud.register();
+		dungeonScoreHud = new ScdDungeonScoreHud(config, mayorPerks);
+		dungeonScoreHud.register();
 
 		// Drop attribution is inventory-diff based: Hypixel's Telekinesis is mandatory, so almost
 		// everything goes straight to inventory with no ground item entity ever spawning, leaving

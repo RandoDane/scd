@@ -78,6 +78,12 @@ public class ScdConfig {
 		// (grid-anchor/room-boundary assumptions not yet live-confirmed), not for privacy reasons - a
 		// fingerprint is just block positions/ids relative to a room cell, nothing player-identifying.
 		public boolean roomMappingEnabled = false;
+
+		// On by default (unlike roomMappingEnabled above) - this is a read-only display the account
+		// owner specifically asked for to verify ScdDungeonScore's numbers live against Odin's own
+		// dungeon score HUD, so it needs to just be visible on the next run without an extra toggle.
+		public boolean scoreHudEnabled = true;
+		public Pos scoreHudPosition = new Pos(8, 200);
 	}
 
 	public static class Slayer {
