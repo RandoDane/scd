@@ -120,7 +120,9 @@ public class ScdAccessoryScreen extends Screen {
 		// against Hypixel's own item list computed server-side (see AccessorySummary's own doc
 		// comment for the known upgrade-family over-counting caveat), so it needs no extra request.
 		List<String> rowTexts = showMissing
-				? summary.missingAccessories().stream().map(ScdApiClient.MissingAccessory::name).toList()
+				? summary.missingAccessories().stream()
+						.map(m -> m.requirement() != null ? m.name() + " (" + m.requirement() + ")" : m.name())
+						.toList()
 				: summary.accessories().stream().map(acc -> {
 					String countSuffix = acc.count() > 1 ? " x" + acc.count() : "";
 					String rarityLabel = acc.rarity() != null ? acc.rarity() : "?";
@@ -199,16 +201,15 @@ public class ScdAccessoryScreen extends Screen {
 			var summary = client.accessoryData().summary();
 			String text;
 			if (showMissing) {
-				// Naive id diff against Hypixel's own item list - see AccessorySummary's doc comment for
-				// the known upgrade-family over-counting caveat (a maxed-out item's lower tiers still
-				// show here, since upgrading consumes rather than keeps them).
-				text = summary.missingAccessories().size() + " missing (may include already-upgraded lower tiers - see notes)";
+				// Grouped by upgrade family server-side now (see AccessorySummary's doc comment) - a maxed-out
+				// item's lower tiers no longer show here as "missing" alongside the real one.
+				text = summary.missingAccessories().size() + " missing (already-owned upgrade tiers excluded)";
 			} else {
-				// peakMagicalPower is Hypixel's own lifetime-best figure, NOT the current total (confirmed
-				// wrong live when first shown as "Magical Power" outright - see ScdApiClient.fetchAccessories)
-				// - labelled explicitly as a peak here so it's never mistaken for the live number again.
-				String peakSuffix = summary.peakMagicalPower() != null ? " (peak Accessory Power ever: " + summary.peakMagicalPower() + ")" : "";
-				text = summary.accessoryCount() + " accessories" + peakSuffix;
+				// accessoryPower is the server's family-deduped current total; peakMagicalPower is Hypixel's
+				// own lifetime-best figure and can sit above it - see ScdApiClient.fetchAccessories's doc comment.
+					String powerText = summary.accessoryPower() != null ? summary.accessoryPower() + " Accessory Power" : summary.accessoryCount() + " accessories";
+				String peakSuffix = summary.peakMagicalPower() != null ? " (peak ever: " + summary.peakMagicalPower() + ")" : "";
+					text = powerText + peakSuffix;
 			}
 			ScdTheme.label(g, this.font, text, panelX + PADDING, summaryLabelY, ScdTheme.TEXT_PRIMARY);
 		}

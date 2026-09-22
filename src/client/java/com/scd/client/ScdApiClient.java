@@ -175,18 +175,18 @@ public class ScdApiClient {
 	public record Accessory(String id, String name, String rarity, int magicalPower, int count) {
 	}
 
-	public record MissingAccessory(String id, String name) {
+	/** requirement is a short human-readable unlock condition (e.g. "Revenant Slayer 8"), or null if the item has none - see server/src/routes/api.js's describeRequirement. A non-null requirement doesn't mean the player fails it, just that one exists; the server doesn't currently fetch player stats to check it. */
+	public record MissingAccessory(String id, String name, String requirement) {
 	}
 
 	/**
-	 * missingAccessories is a NAIVE diff (every ACCESSORY-category item id the player's bag doesn't
-	 * have) against Hypixel's own current item list - confirmed live 2026-09-21 that this over-reports:
-	 * owning only an item's highest upgrade tier (e.g. "Accretion Artifact") still lists its lower
-	 * tiers ("Accretion Ring", "Accretion Talisman") as missing, since upgrading consumes them rather
-	 * than leaving you holding all three. Correctly collapsing an upgrade family into one entry needs
-	 * data this project doesn't have yet - shown as-is, not silently "fixed" with a guessed heuristic.
+	 * FIXED 2026-09-22: missingAccessories is now grouped by upgrade family (see
+	 * server/src/accessoryFamilies.js) - owning any tier of a family (e.g. "Accretion Artifact") no
+	 * longer lists its lower tiers ("Accretion Ring", "Accretion Talisman") as missing. Previously a
+	 * naive per-id diff over-reported those as missing since upgrading consumes the lower tiers
+	 * rather than leaving you holding all three.
 	 */
-	public record AccessorySummary(String username, int accessoryCount, Integer peakMagicalPower,
+	public record AccessorySummary(String username, int accessoryCount, Integer accessoryPower, Integer peakMagicalPower,
 			List<Accessory> accessories, List<MissingAccessory> missingAccessories) {
 	}
 
@@ -195,11 +195,10 @@ public class ScdApiClient {
 	 * (needs the server's own HYPIXEL_API_KEY, see server/README.md), unlike every other endpoint
 	 * here which is public/cached.
 	 *
-	 * CORRECTED 2026-09-21: peakMagicalPower is Hypixel's own lifetime-PEAK Accessory Power, not the
-	 * player's current total - confirmed wrong live (1621 peak reported vs 1520 actual current, same
-	 * account) after originally being treated as authoritative. There's no known API field for the
-	 * live current total, so ScdAccessoryScreen must show this labelled clearly as a peak, never as
-	 * "your Magical Power" - see FEATURE_ROADMAP.md §13 for the real fix (an in-game bag scan).
+	 * accessoryPower is the server's own family-deduped current total (see
+	 * hypixelProfile.js#computeAccessoryPower) - the real, live number, unlike peakMagicalPower below
+	 * which is Hypixel's own lifetime-PEAK figure and can sit above the current total after any
+	 * accessory swap (confirmed live 2026-09-21: 1621 peak vs 1520 actual current, same account).
 	 */
 	public CompletableFuture<AccessorySummary> fetchAccessories(String username) {
 		String url = baseUrl + "/api/profile/" + java.net.URLEncoder.encode(username, java.nio.charset.StandardCharsets.UTF_8) + "/accessories";
@@ -226,17 +225,20 @@ public class ScdApiClient {
 					}
 					JsonElement peakEl = body.get("peakMagicalPower");
 					Integer peak = peakEl != null && !peakEl.isJsonNull() ? peakEl.getAsInt() : null;
+						JsonElement powerEl = body.get("accessoryPower");
+						Integer power = powerEl != null && !powerEl.isJsonNull() ? powerEl.getAsInt() : null;
 					List<MissingAccessory> missing = new ArrayList<>();
 					JsonArray missingArr = body.getAsJsonArray("missingAccessories");
 					if (missingArr != null) {
 						for (var el : missingArr) {
 							JsonObject o = el.getAsJsonObject();
-							missing.add(new MissingAccessory(o.get("id").getAsString(), o.get("name").getAsString()));
+							missing.add(new MissingAccessory(o.get("id").getAsString(), o.get("name").getAsString(), nullableString(o, "requirement")));
 						}
 					}
 					return new AccessorySummary(
 							body.get("username").getAsString(),
 							body.get("accessoryCount").getAsInt(),
+							power,
 							peak,
 							accessories,
 							missing);
