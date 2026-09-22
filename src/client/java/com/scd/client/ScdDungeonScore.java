@@ -67,13 +67,22 @@ import java.util.regex.Pattern;
  * flagged so the gap is a known simplification, not a silent inaccuracy.
  *
  * **Correction 2026-09-23, round three**: past 100% clear (the boss room and beyond - this
- * project has no real boss-room detection, so 100% clear stands in for it), the total is no
- * longer this class's own estimate at all - it's Hypixel's own real live score, read straight
- * off the sidebar (`ScdDungeonManager`'s `liveScore`, confirmed by the account owner to be
- * accurate from the boss room onward, including after the kill, unlike everywhere earlier in the
- * run). Added after a live test showed our own estimate kept drifting right around exactly that
- * transition (both "blood room" bugs above were caught there) - once the real number is on
- * screen, there's no reason to keep computing a guess instead of just showing it.
+ * project has no real boss-room detection, so 100% clear stands in for it), the total stops
+ * being this class's own full estimate - it's Hypixel's own real live score
+ * (`ScdDungeonManager`'s `liveScore`, confirmed by the account owner to be accurate from the
+ * boss room onward, unlike everywhere earlier in the run), captured ONCE as a baseline the
+ * instant it becomes available. Added after a live test showed the estimate kept drifting right
+ * around exactly that transition (both "blood room" bugs above were caught there).
+ *
+ * **Refined immediately after, same day**: a pure one-time snapshot isn't enough either - the
+ * account owner correctly pointed out that time (Speed decay on a long boss fight) and deaths
+ * can still change the true score *during* the fight, and Hypixel's own sidebar figure isn't
+ * confirmed to keep live-updating through all of that. So from the baseline moment on, this
+ * class's own Speed and death tracking (already computed every tick regardless, no boss-room
+ * detection needed for either) is applied as a **delta on top of the real baseline**, not used to
+ * recompute the whole score from scratch - the baseline anchors Skill/Explore/Bonus (which
+ * shouldn't be changing once you're this deep into a run anyway), while Speed/deaths keep moving
+ * live for as long as the fight runs.
  */
 public final class ScdDungeonScore {
 	private static final Pattern COMPLETED_ROOMS_LINE = Pattern.compile("Completed Rooms:\\s*(\\d+)");
@@ -131,6 +140,14 @@ public final class ScdDungeonScore {
 	private static boolean princeKilled = false;
 	private static boolean batKilled = false;
 	private static boolean bloodRoomCompleted = false;
+	// Captured once, the first tick Hypixel's own live score becomes trustworthy (see the
+	// "round three" class doc note) - speed/deaths at that exact moment, so anything that changes
+	// AFTER (a death during the boss fight, time pushing Speed into a further decay tier) can still
+	// be tracked as a delta on top of the real baseline, instead of either freezing the display for
+	// the rest of the fight or falling back to the full (buggy-around-transitions) estimate.
+	private static Integer bossBaselineScore = null;
+	private static int bossBaselineSpeed = 100;
+	private static int bossBaselineDeaths = 0;
 
 	private ScdDungeonScore() {
 	}
@@ -152,6 +169,7 @@ public final class ScdDungeonScore {
 		princeKilled = false;
 		batKilled = false;
 		bloodRoomCompleted = false;
+		bossBaselineScore = null;
 	}
 
 	public record ScoreBreakdown(
@@ -203,6 +221,7 @@ public final class ScdDungeonScore {
 			princeKilled = false;
 			batKilled = false;
 			bloodRoomCompleted = false;
+			bossBaselineScore = null;
 		}
 		wasInDungeon = true;
 
@@ -242,14 +261,26 @@ public final class ScdDungeonScore {
 		// Prefer Hypixel's own real live score once it's actually trustworthy, rather than keep
 		// estimating - confirmed directly by the account owner (see ScdDungeonManager's own class
 		// doc): the sidebar's "Cleared: X% (N)" figure is only accurate once inside the boss room,
-		// but IS accurate from that point on, including after the kill. This project has no real
-		// boss-room detection yet, so 100% clear is used as the proxy signal for "trust it now."
-		// Confirmed live 2026-09-23 this matters: our own estimate kept drifting right around this
-		// exact transition (two separate "blood room" timing bugs already found and fixed there),
-		// while the real number is simply correct the whole time once available - no reason to keep
-		// guessing once the ground truth is on screen.
+		// but IS accurate from that point on. This project has no real boss-room detection yet, so
+		// 100% clear is used as the proxy signal for "trust it now." Confirmed live 2026-09-23 this
+		// matters: our own estimate kept drifting right around this exact transition (two separate
+		// "blood room" timing bugs already found and fixed there).
+		//
+		// NOT a one-time snapshot, though - the account owner correctly pointed out a boss fight can
+		// run long enough to push Speed into a further decay tier, or a teammate can die, and both
+		// still change the true score DURING the fight. Hypixel's own sidebar figure isn't confirmed
+		// to keep live-updating for that whole stretch, so instead of either re-reading it every
+		// tick (risking it being stale) or freezing it (ignoring genuine later changes), the real
+		// value is captured ONCE as a baseline the instant it first becomes available, and this
+		// class's own Speed/deaths tracking - which needs no boss-room detection, both are already
+		// computed every tick regardless - is applied as a delta on top of it from then on.
 		if (state.clearPercent() != null && state.clearPercent() >= 100 && state.liveScore() != null) {
-			total = state.liveScore();
+			if (bossBaselineScore == null) {
+				bossBaselineScore = state.liveScore();
+				bossBaselineSpeed = speed;
+				bossBaselineDeaths = deaths;
+			}
+			total = bossBaselineScore + (speed - bossBaselineSpeed) - (deaths - bossBaselineDeaths) * 2;
 		}
 
 		return new ScoreBreakdown(total, skill, explore, speed, bonus, isEntrance,
