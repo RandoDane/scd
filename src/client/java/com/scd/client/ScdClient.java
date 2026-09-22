@@ -65,7 +65,9 @@ public class ScdClient implements ClientModInitializer {
 	private static final int MISSING_GRID_COLUMNS = 8;
 	private static final int MISSING_GRID_ROWS = 4;
 	private static final int MISSING_ICON_SIZE = 16;
-	private static final int MISSING_ICON_GAP = 4;
+	private static final int MISSING_ICON_BOX_PADDING = 2;
+	private static final int MISSING_ICON_BOX_SIZE = MISSING_ICON_SIZE + MISSING_ICON_BOX_PADDING * 2;
+	private static final int MISSING_ICON_GAP = 2;
 	private static final int MISSING_ACCESSORIES_PAGE_SIZE = MISSING_GRID_COLUMNS * MISSING_GRID_ROWS;
 	private int missingAccessoriesPage = 0;
 	// false (default) = rarity-best-first, i.e. whichever missing tier is closest to "maxed" for
@@ -1066,7 +1068,7 @@ public class ScdClient implements ClientModInitializer {
 		// of this formula quietly undercounted the header line and the divider gap, leaving the panel
 		// too short for its own content.
 		int fixedLines = 4;
-		int height = 52 + fixedLines * (lineH + 4) + gridRows * (MISSING_ICON_SIZE + MISSING_ICON_GAP) + (showNav ? 26 : 0);
+		int height = 52 + fixedLines * (lineH + 4) + gridRows * (MISSING_ICON_BOX_SIZE + MISSING_ICON_GAP) + (showNav ? 26 : 0);
 
 		ScdTheme.panel(g, x, y, width, height);
 		ScdTheme.label(g, font, "Accessory Helper", x + 10, y + 10, ScdTheme.TEXT_PRIMARY);
@@ -1114,20 +1116,28 @@ public class ScdClient implements ClientModInitializer {
 			int col = 0;
 			for (int i = from; i < to; i++) {
 				var item = missing.get(i);
-				int cellX = x + 10 + col * (MISSING_ICON_SIZE + MISSING_ICON_GAP);
-				int cellY = ty;
+				int boxX = x + 10 + col * (MISSING_ICON_BOX_SIZE + MISSING_ICON_GAP);
+				int boxY = ty;
+				boolean isHovered = mouseX >= boxX && mouseX < boxX + MISSING_ICON_BOX_SIZE
+						&& mouseY >= boxY && mouseY < boxY + MISSING_ICON_BOX_SIZE;
+				// A slot-style box per accessory, not just a bare floating icon - easier to read as a
+				// grid, and gives hover a real visible target the same way every other button in this
+				// panel already does.
+				g.fillGradient(boxX, boxY, boxX + MISSING_ICON_BOX_SIZE, boxY + MISSING_ICON_BOX_SIZE,
+						isHovered ? ScdTheme.CARD_HOVER_TOP : ScdTheme.CARD_TOP,
+						isHovered ? ScdTheme.CARD_HOVER_BOTTOM : ScdTheme.CARD_BOTTOM);
+				g.outline(boxX, boxY, MISSING_ICON_BOX_SIZE, MISSING_ICON_BOX_SIZE,
+						isHovered ? ScdTheme.ACCENT_ACCESSORIES : ScdTheme.PANEL_BORDER);
 				ItemStack stack = ScdIcons.resolve(item.icon());
-				g.item(stack, cellX, cellY);
-				if (mouseX >= cellX && mouseX < cellX + MISSING_ICON_SIZE && mouseY >= cellY && mouseY < cellY + MISSING_ICON_SIZE) {
-					hovered = item;
-				}
+				g.item(stack, boxX + MISSING_ICON_BOX_PADDING, boxY + MISSING_ICON_BOX_PADDING);
+				if (isHovered) hovered = item;
 				col++;
 				if (col >= MISSING_GRID_COLUMNS) {
 					col = 0;
-					ty += MISSING_ICON_SIZE + MISSING_ICON_GAP;
+					ty += MISSING_ICON_BOX_SIZE + MISSING_ICON_GAP;
 				}
 			}
-			if (col != 0) ty += MISSING_ICON_SIZE + MISSING_ICON_GAP; // a partial last row still needs its own height counted
+			if (col != 0) ty += MISSING_ICON_BOX_SIZE + MISSING_ICON_GAP; // a partial last row still needs its own height counted
 		}
 
 		if (showNav) {

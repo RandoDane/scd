@@ -21,8 +21,15 @@ public final class ScdIcons {
 		if (icon == null) return ItemStack.EMPTY;
 
 		if (icon.skinValue() != null) {
-			PropertyMap properties = new PropertyMap(HashMultimap.create());
-			properties.put("textures", new Property("textures", icon.skinValue(), icon.skinSignature()));
+			// Confirmed live 2026-09-22 (reproduced standalone against the real authlib jar, not
+			// guessed): PropertyMap.put() itself always throws UnsupportedOperationException in this
+			// authlib version, regardless of what backing Multimap it was constructed with - it must be
+			// pre-populated before being wrapped, not written to afterward. This sat unnoticed until the
+			// missing-accessories grid started using it, since Bazaar icons (the only prior caller)
+			// rarely hit the skin-value branch at all.
+			HashMultimap<String, Property> backing = HashMultimap.create();
+			backing.put("textures", new Property("textures", icon.skinValue(), icon.skinSignature()));
+			PropertyMap properties = new PropertyMap(backing);
 			GameProfile profile = new GameProfile(UUID.randomUUID(), "scd_icon", properties);
 			ItemStack head = new ItemStack(Items.PLAYER_HEAD);
 			head.set(DataComponents.PROFILE, ResolvableProfile.createResolved(profile));
