@@ -59,6 +59,17 @@ public final class ScdLog {
 		}
 	}
 
+	/** Same as guard(), but for a hook that must return a value (e.g. ScreenMouseEvents.AllowMouseClick) - falls back to `fallback` on error rather than swallowing it silently, since returning the wrong boolean there could block the player's own click instead of just skipping a render. */
+	public static boolean guardBoolean(String context, java.util.function.BooleanSupplier action, boolean fallback) {
+		try {
+			return action.getAsBoolean();
+		} catch (Throwable t) {
+			LOGGER.error("[{}] threw - see stack trace below", context, t);
+			maybeAlertChat(context, t);
+			return fallback;
+		}
+	}
+
 	private static void maybeAlertChat(String context, Throwable t) {
 		long now = System.currentTimeMillis();
 		Long last = lastChatAlertMs.get(context);

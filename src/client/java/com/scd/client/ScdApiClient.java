@@ -175,8 +175,8 @@ public class ScdApiClient {
 	public record Accessory(String id, String name, String rarity, int magicalPower, int count) {
 	}
 
-	/** requirement is a short human-readable unlock condition (e.g. "Revenant Slayer 8"), or null if the item has none - see server/src/routes/api.js's describeRequirement. A non-null requirement doesn't mean the player fails it, just that one exists; the server doesn't currently fetch player stats to check it. */
-	public record MissingAccessory(String id, String name, String requirement) {
+	/** tier is the item's rarity (e.g. "LEGENDARY") - used client-side for the missing-accessories overlay's per-row color, see ScdTheme.rarityColor. requirement is a short human-readable unlock condition (e.g. "Revenant Slayer 8"), or null if the item has none - see server/src/routes/api.js's describeRequirement. A non-null requirement doesn't mean the player fails it, just that one exists; the server doesn't currently fetch player stats to check it. */
+	public record MissingAccessory(String id, String name, String tier, String requirement) {
 	}
 
 	/**
@@ -232,7 +232,7 @@ public class ScdApiClient {
 					if (missingArr != null) {
 						for (var el : missingArr) {
 							JsonObject o = el.getAsJsonObject();
-							missing.add(new MissingAccessory(o.get("id").getAsString(), o.get("name").getAsString(), nullableString(o, "requirement")));
+							missing.add(new MissingAccessory(o.get("id").getAsString(), o.get("name").getAsString(), nullableString(o, "tier"), nullableString(o, "requirement")));
 						}
 					}
 					return new AccessorySummary(

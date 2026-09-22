@@ -59,19 +59,6 @@ public class ScdAccessoryBagWatcher {
 		return TITLE_PATTERN.matcher(screen.getTitle().getString()).find();
 	}
 
-	/**
-	 * True if the given (freshly-opened, not yet scanned) screen is page 1 of the bag - the signal
-	 * ScdClient uses to call reset() exactly once per fresh visit to the menu (at
-	 * ScreenEvents.AFTER_INIT time, before any ticks/scans have happened), rather than this class
-	 * guessing "fresh visit" from its own accumulated state. Without an explicit reset point, an
-	 * accessory removed from the bag since the last scan would stay counted forever - onScreenOpened
-	 * below only ever adds/overwrites entries, it never removes ones that vanished.
-	 */
-	public static boolean isFreshPageOne(Screen screen) {
-		Matcher m = TITLE_PATTERN.matcher(screen.getTitle().getString());
-		return m.find() && "1".equals(m.group(1));
-	}
-
 	/** Call every tick the Accessory Bag screen is open - re-scanning an already-seen page is harmless, just redundant. */
 	public void onScreenOpened(Screen screen) {
 		Matcher titleMatch = TITLE_PATTERN.matcher(screen.getTitle().getString());
@@ -107,7 +94,7 @@ public class ScdAccessoryBagWatcher {
 		}
 	}
 
-	/** Resets to a blank scan - ScdClient calls this once whenever isFreshPageOne() fires, so a stale prior scan can't silently mix with accessories removed/changed since. */
+	/** Resets to a blank scan - ScdClient calls this once per fresh visit to the menu (transitioning in from a non-bag screen, tracked in ScdClient itself since it can't be inferred from this class's own state), so a stale prior scan can't silently mix with accessories removed/changed since, and so paging between pages 1/2/3 of an already-open bag never wipes progress. */
 	public void reset() {
 		scanned.clear();
 		pagesSeen.clear();

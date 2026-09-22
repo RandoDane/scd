@@ -9,11 +9,13 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
@@ -21,6 +23,7 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.world.item.component.ItemLore;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -50,6 +53,21 @@ public class ScdClient implements ClientModInitializer {
 	private final ScdInventoryWatcher inventoryWatcher = new ScdInventoryWatcher();
 	private final ScdAccessoryData accessoryData = new ScdAccessoryData();
 	private final ScdAccessoryBagWatcher accessoryBagWatcher = new ScdAccessoryBagWatcher();
+	// True only while the vanilla Accessory Bag screen has been open continuously since the last
+	// non-bag screen - tracked here rather than inferred from the watcher's own state, since Hypixel
+	// sends a genuinely new Screen instance per page (confirmed live: this AFTER_INIT block fires on
+	// every page turn, not just the first open), so "is this screen page 1" alone can't tell a fresh
+	// visit apart from paging back to 1 mid-session. Gates accessoryBagWatcher.reset() - see its own
+	// updated doc comment.
+	private boolean accessoryBagSessionOpen = false;
+	private static final int MISSING_ACCESSORIES_PAGE_SIZE = 8;
+	private int missingAccessoriesPage = 0;
+	// Instantiated once and repositioned/toggled each frame rather than per-screen - the vanilla
+	// Accessory Bag screen isn't ours to addRenderableWidget() into, so these are driven manually:
+	// extractRenderState() called from renderAccessoryBagOverlay, mouseClicked() called from the
+	// ScreenMouseEvents.allowMouseClick hook registered alongside it (see handleAccessoryOverlayClick).
+	private final ScdButton missingAccessoriesPrevButton = new ScdButton(0, 0, 16, 16, Component.literal("<"), ScdTheme.ACCENT_ACCESSORIES, () -> missingAccessoriesPage--);
+	private final ScdButton missingAccessoriesNextButton = new ScdButton(0, 0, 16, 16, Component.literal(">"), ScdTheme.ACCENT_ACCESSORIES, () -> missingAccessoriesPage++);
 	// Throwaway proof-of-concept for the entity-glow mixin (see FEATURE_ROADMAP.md's "T2/T3
 	// re-scoped" section) - /scd debug glowtest toggles this, the registered adder below does the
 	// rest. Remove alongside its adder/command once confirmed live.
@@ -197,18 +215,29 @@ public class ScdClient implements ClientModInitializer {
 			}
 
 			if (ScdAccessoryBagWatcher.isAccessoryBagScreen(screen) && config.accessories.missingAccessoriesOverlayEnabled) {
-				// Reset happens exactly once, right here at the fresh-screen-open moment (not inferred
-				// from the watcher's own accumulated state) - see ScdAccessoryBagWatcher.isFreshPageOne's
-				// doc comment for why that matters (an accessory removed since the last scan would
-				// otherwise stay counted forever).
-				if (ScdAccessoryBagWatcher.isFreshPageOne(screen)) accessoryBagWatcher.reset();
+				// Reset only on the transition INTO the bag from something else, not on every page-1
+				// screen (Hypixel sends a fresh Screen per page turn, so this AAFTER_INIT block fires on
+				// every page, not just the first) - otherwise paging 1->2->3->1 wiped the scan right back
+				// to empty. See accessoryBagSessionOpen's own doc comment.
+				if (!accessoryBagSessionOpen) {
+					accessoryBagWatcher.reset();
+					missingAccessoriesPage = 0;
+				}
+				accessoryBagSessionOpen = true;
 				// The missing-accessories list comes from the backend (server/src/hypixelProfile.js),
 				// not this in-game scan - kick that fetch off here too so it's ready without the player
 				// needing to separately visit /scd's own Accessories screen first.
 				if (accessoryData.status() == ScdAccessoryData.Status.IDLE) refreshAccessories();
 				ScreenEvents.afterTick(screen).register(s -> ScdLog.guard("accessory bag watch", () -> accessoryBagWatcher.onScreenOpened(s)));
 				ScreenEvents.afterExtract(screen).register((s, graphics, mouseX, mouseY, partialTick) ->
-						ScdLog.guard("accessory bag overlay", () -> renderAccessoryBagOverlay(graphics)));
+						ScdLog.guard("accessory bag overlay", () -> renderAccessoryBagOverlay(graphics, mouseX, mouseY, partialTick)));
+				// The vanilla bag screen isn't ours, so its own click handling knows nothing about our
+				// overlay's Prev/Next arrows - this hook lets us intercept a click before Hypixel's own
+				// screen (and by extension the server, for a slot click) ever sees it.
+				ScreenMouseEvents.allowMouseClick(screen).register((s, event) ->
+						ScdLog.guardBoolean("accessory bag overlay click", () -> handleAccessoryOverlayClick(event), true));
+			} else {
+				accessoryBagSessionOpen = false;
 			}
 		});
 
@@ -947,23 +976,46 @@ public class ScdClient implements ClientModInitializer {
 	}
 
 	/**
-	 * Drawn to the left of the vanilla Accessory Bag screen (see ScdAccessoryBagWatcher) while
-	 * "Missing accessories overlay" is enabled - currently just scan progress + the live Accessory
-	 * Power total once a full scan completes, not yet an actual missing-accessory list (that needs a
-	 * maintained master accessory list this project doesn't have yet, see FEATURE_ROADMAP.md §13).
-	 * Fixed screen-relative position rather than docked against the vanilla GUI's own computed
-	 * bounds - simple and always correct regardless of that GUI's actual size, at the cost of not
-	 * being pixel-snug against it.
+	 * Missing accessories sorted rarity-first (best/rarest missing item at the top - the one most
+	 * worth going after), name as the tiebreak. An unknown/missing tier (rarityRank -1) sorts last
+	 * rather than crashing a null comparison.
 	 */
-	private void renderAccessoryBagOverlay(GuiGraphicsExtractor g) {
+	private static List<ScdApiClient.MissingAccessory> sortedMissingAccessories(List<ScdApiClient.MissingAccessory> missing) {
+		return missing.stream()
+				.sorted(Comparator.comparingInt((ScdApiClient.MissingAccessory m) -> ScdTheme.rarityRank(m.tier())).reversed()
+						.thenComparing(ScdApiClient.MissingAccessory::name))
+				.toList();
+	}
+
+	/**
+	 * Drawn to the left of the vanilla Accessory Bag screen (see ScdAccessoryBagWatcher) while
+	 * "Missing accessories overlay" is enabled: scan progress + the live Accessory Power total once
+	 * complete, then a paged, rarity-colored list of what's still missing (see
+	 * sortedMissingAccessories/ScdTheme.rarityColor). Fixed screen-relative position rather than
+	 * docked against the vanilla GUI's own computed bounds - simple and always correct regardless of
+	 * that GUI's actual size, at the cost of not being pixel-snug against it.
+	 */
+	private void renderAccessoryBagOverlay(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
 		int x = 10;
 		int y = 10;
-		int width = 170;
+		int width = 220;
 		var font = Minecraft.getInstance().font;
-
 		int lineH = ScdTheme.lineHeight(font);
-		int contentLines = 3 + (accessoryBagWatcher.isComplete() ? 1 : 0) + 1;
-		int height = 22 + contentLines * (lineH + 4) + 10;
+
+		boolean missingLoaded = accessoryData.status() == ScdAccessoryData.Status.LOADED;
+		List<ScdApiClient.MissingAccessory> missing = missingLoaded
+				? sortedMissingAccessories(accessoryData.summary().missingAccessories())
+				: List.of();
+		int pageCount = Math.max(1, (missing.size() + MISSING_ACCESSORIES_PAGE_SIZE - 1) / MISSING_ACCESSORIES_PAGE_SIZE);
+		missingAccessoriesPage = Math.max(0, Math.min(missingAccessoriesPage, pageCount - 1));
+		int from = missingAccessoriesPage * MISSING_ACCESSORIES_PAGE_SIZE;
+		int to = Math.min(from + MISSING_ACCESSORIES_PAGE_SIZE, missing.size());
+		int missingRowCount = missingLoaded ? Math.max(1, to - from) : 1;
+		boolean showNav = missingLoaded && missing.size() > MISSING_ACCESSORIES_PAGE_SIZE;
+
+		int scanLines = 3; // Scanned/Pages line + (Accessory Power or "keep browsing") line + missing-header line
+		int contentLines = scanLines + missingRowCount + (showNav ? 1 : 0);
+		int height = 22 + contentLines * (lineH + 4) + 10 + (showNav ? 18 : 0);
 
 		ScdTheme.panel(g, x, y, width, height);
 		ScdTheme.label(g, font, "Accessory Scan", x + 10, y + 10, ScdTheme.TEXT_PRIMARY);
@@ -982,17 +1034,60 @@ public class ScdClient implements ClientModInitializer {
 			ScdTheme.label(g, font, "Keep browsing to finish the scan", x + 10, ty, ScdTheme.TEXT_MUTED);
 			ty += lineH + 4;
 		}
+		ty += 4;
+		ScdTheme.divider(g, x + 10, ty, width - 20);
+		ty += 8;
 
-		// Separate data source from the scan above (the server's ACCESSORY-category item list, see
-		// ScdApiClient.AccessorySummary.missingAccessories's doc comment for the known upgrade-family
-		// over-counting caveat) - shown as a plain count here, not the full names, since this panel is
-		// too narrow for a browsable list; see ScdAccessoryScreen for that.
-		String missingText = switch (accessoryData.status()) {
+		String headerText = switch (accessoryData.status()) {
 			case IDLE, LOADING -> "Missing: loading...";
 			case ERROR -> "Missing: unavailable";
-			case LOADED -> "Missing: " + accessoryData.summary().missingAccessories().size();
+			case LOADED -> "Missing (" + missing.size() + ")";
 		};
-		ScdTheme.label(g, font, missingText, x + 10, ty, ScdTheme.TEXT_MUTED);
+		ScdTheme.label(g, font, headerText, x + 10, ty, ScdTheme.TEXT_PRIMARY);
+		ty += lineH + 4;
+
+		if (missingLoaded) {
+			for (int i = from; i < to; i++) {
+				var item = missing.get(i);
+				int color = ScdTheme.rarityColor(item.tier());
+				String rowText = item.name() + " (" + ScdTheme.prettyTier(item.tier()) + ")";
+				ScdTheme.label(g, font, rowText, x + 10, ty, color);
+				ty += lineH + 4;
+			}
+		}
+
+		if (showNav) {
+			missingAccessoriesPrevButton.active = missingAccessoriesPage > 0;
+			missingAccessoriesNextButton.active = missingAccessoriesPage < pageCount - 1;
+			missingAccessoriesPrevButton.setX(x + 10);
+			missingAccessoriesPrevButton.setY(ty);
+			missingAccessoriesNextButton.setX(x + width - 10 - 16);
+			missingAccessoriesNextButton.setY(ty);
+			missingAccessoriesPrevButton.extractRenderState(g, mouseX, mouseY, partialTick);
+			missingAccessoriesNextButton.extractRenderState(g, mouseX, mouseY, partialTick);
+			ScdTheme.scaledCenteredText(g, font, Component.literal("Page " + (missingAccessoriesPage + 1) + "/" + pageCount),
+					x + width / 2, ty + 4, ScdTheme.TEXT_MUTED);
+		} else {
+			// Not rendered this frame - also deactivate so a stale click at their last on-screen
+			// position (e.g. right as the list shrinks to fit one page) can't still fire.
+			missingAccessoriesPrevButton.active = false;
+			missingAccessoriesNextButton.active = false;
+		}
+	}
+
+	/**
+	 * The vanilla Accessory Bag screen isn't ours to addRenderableWidget() into, so these two arrow
+	 * buttons are driven manually - registered against ScreenMouseEvents.allowMouseClick (see the
+	 * AFTER_INIT block above) instead of going through the normal Screen widget list.
+	 * AbstractWidget.mouseClicked() already checks isMouseOver()/isActive() and fires onClick itself,
+	 * so returning false here (block the click from reaching Hypixel's own screen/the server) exactly
+	 * when one of the two consumed it is enough - no separate hit-testing needed.
+	 */
+	private boolean handleAccessoryOverlayClick(MouseButtonEvent event) {
+		if (event.button() != 0) return true;
+		boolean handled = missingAccessoriesPrevButton.mouseClicked(event, false)
+				|| missingAccessoriesNextButton.mouseClicked(event, false);
+		return !handled;
 	}
 
 	/**

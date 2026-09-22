@@ -54,6 +54,35 @@ public final class ScdTheme {
 	public static final int ACCENT_SLAYER = 0xFFEF5B5B;
 	public static final int ACCENT_ACCESSORIES = 0xFFE8B84B;
 
+	// Same rarity colors Hypixel itself uses on item tooltips/chat (standard Minecraft formatting
+	// colors underneath: white/green/blue/dark_purple/gold/light_purple/aqua) - so a rarity-tagged
+	// row here reads exactly like the in-game item name would. Order matches worst-to-best, reused
+	// both for color lookup and for ranking missing accessories best-first (see ScdClient's
+	// sortedMissingAccessories).
+	private static final String[] RARITY_ORDER = {"COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC", "DIVINE"};
+	private static final int[] RARITY_COLORS = {0xFFFFFFFF, 0xFF55FF55, 0xFF5555FF, 0xFFAA00AA, 0xFFFFAA00, 0xFFFF55FF, 0xFF55FFFF};
+
+	/** Index into RARITY_ORDER (worst=0), or -1 for an unknown/missing tier - used to sort missing accessories best-first. */
+	public static int rarityRank(String tier) {
+		if (tier == null) return -1;
+		for (int i = 0; i < RARITY_ORDER.length; i++) {
+			if (RARITY_ORDER[i].equals(tier)) return i;
+		}
+		return -1;
+	}
+
+	/** The color an item of this rarity's name would render in, matching Hypixel's own tooltip colors. Falls back to TEXT_SECONDARY for an unknown/missing tier rather than guessing. */
+	public static int rarityColor(String tier) {
+		int rank = rarityRank(tier);
+		return rank >= 0 ? RARITY_COLORS[rank] : TEXT_SECONDARY;
+	}
+
+	/** "LEGENDARY" -> "Legendary" - for display next to the colored name instead of shouty all-caps. */
+	public static String prettyTier(String tier) {
+		if (tier == null || tier.isEmpty()) return "Unknown";
+		return tier.charAt(0) + tier.substring(1).toLowerCase(Locale.ROOT);
+	}
+
 	/**
 	 * Everything drawn through the scaled* helpers below renders at this fraction of native font size,
 	 * for denser screens (10+ categories). MUST stay a whole number reciprocal / exact multiple - vanilla's
