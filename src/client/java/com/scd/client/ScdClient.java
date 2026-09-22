@@ -63,11 +63,12 @@ public class ScdClient implements ClientModInitializer {
 	// updated doc comment.
 	private boolean accessoryBagSessionOpen = false;
 	private static final int MISSING_GRID_COLUMNS = 8;
-	private static final int MISSING_GRID_ROWS = 4;
+	private static final int MISSING_GRID_ROWS = 5;
 	private static final int MISSING_ICON_SIZE = 16;
 	private static final int MISSING_ICON_BOX_PADDING = 2;
 	private static final int MISSING_ICON_BOX_SIZE = MISSING_ICON_SIZE + MISSING_ICON_BOX_PADDING * 2;
 	private static final int MISSING_ICON_GAP = 2;
+	private static final int MISSING_HEADER_ROW_GAP_EXTRA = 4;
 	private static final int MISSING_ACCESSORIES_PAGE_SIZE = MISSING_GRID_COLUMNS * MISSING_GRID_ROWS;
 	private int missingAccessoriesPage = 0;
 	/**
@@ -1076,7 +1077,8 @@ public class ScdClient implements ClientModInitializer {
 		// of this formula quietly undercounted the header line and the divider gap, leaving the panel
 		// too short for its own content.
 		int fixedLines = 4;
-		int height = 52 + fixedLines * (lineH + 4) + gridRows * (MISSING_ICON_BOX_SIZE + MISSING_ICON_GAP) + (showNav ? 26 : 0);
+		int height = 52 + fixedLines * (lineH + 4) + MISSING_HEADER_ROW_GAP_EXTRA
+				+ gridRows * (MISSING_ICON_BOX_SIZE + MISSING_ICON_GAP) + (showNav ? 26 : 0);
 
 		ScdTheme.panel(g, x, y, width, height);
 		ScdTheme.label(g, font, "Accessory Helper", x + 10, y + 10, ScdTheme.TEXT_PRIMARY);
@@ -1120,7 +1122,13 @@ public class ScdClient implements ClientModInitializer {
 		} else {
 			missingAccessoriesSortButton.active = false;
 		}
-		ty += lineH + 4;
+		// The sort button is 16px tall starting 2px above this row's own baseline, so its bottom edge
+		// sits below where the next row would normally start (lineH+4 alone) - confirmed live
+		// 2026-09-22, the icon grid's first row was visibly touching the button. The extra
+		// MISSING_HEADER_ROW_GAP_EXTRA clears it; kept as its own named constant (added into the
+		// height formula below too) rather than silently changing this one lineH+4 among several
+		// identical-looking ones.
+		ty += lineH + 4 + MISSING_HEADER_ROW_GAP_EXTRA;
 
 		// Hovered while walking the grid below, tooltip drawn last (after the nav row) so it always
 		// paints on top rather than being drawn-over by whatever comes after it.

@@ -14,7 +14,8 @@ import java.util.List;
  * over-pads.
  */
 public class ScdOverlayBox {
-	private static final int BG_COLOR = 0x90000000;
+	// ~15% lower opacity than the original 0x90 (144 -> 122), per direct request 2026-09-22.
+	private static final int BG_COLOR = 0x7A000000;
 	private static final int PADDING = 4;
 	private static final int ICON_SIZE = 16;
 
