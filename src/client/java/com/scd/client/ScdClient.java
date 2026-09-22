@@ -1103,9 +1103,11 @@ public class ScdClient implements ClientModInitializer {
 			missingAccessoriesPrevButton.setX(x + 10);
 			missingAccessoriesPrevButton.setY(ty);
 			missingAccessoriesPrevButton.setWidth(navWidth);
+			missingAccessoriesPrevButton.setAccentColor(ScdTheme.ACCENT_ACCESSORIES);
 			missingAccessoriesNextButton.setX(x + 10 + navWidth + 8);
 			missingAccessoriesNextButton.setY(ty);
 			missingAccessoriesNextButton.setWidth(navWidth);
+			missingAccessoriesNextButton.setAccentColor(ScdTheme.ACCENT_ACCESSORIES);
 			missingAccessoriesPrevButton.extractRenderState(g, mouseX, mouseY, partialTick);
 			missingAccessoriesNextButton.extractRenderState(g, mouseX, mouseY, partialTick);
 		} else {

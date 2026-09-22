@@ -14,13 +14,27 @@ public class ScdButton extends AbstractWidget {
 		void onPress();
 	}
 
-	private final int accentColor;
+	private int accentColor;
 	private final OnPress onPress;
 
 	public ScdButton(int x, int y, int width, int height, Component message, int accentColor, OnPress onPress) {
 		super(x, y, width, height, message);
 		this.accentColor = accentColor;
 		this.onPress = onPress;
+	}
+
+	/**
+	 * Not baked in at construction any more - a button built once and reused across frames (rather
+	 * than a Screen's own widgets, rebuilt fresh with the current ScdTheme fields every time that
+	 * Screen reopens) needs this called every frame it's drawn, or it keeps whatever accent was live
+	 * the moment it was constructed forever. Confirmed live 2026-09-22: the accessory overlay's
+	 * Prev/Next buttons are ScdClient's own long-lived fields (constructed once at mod startup,
+	 * long before the player ever picks a theme), so they kept the default gold accent no matter
+	 * what theme was later applied - every other button in the mod lives inside a Screen and never
+	 * had this problem.
+	 */
+	public void setAccentColor(int accentColor) {
+		this.accentColor = accentColor;
 	}
 
 	@Override
