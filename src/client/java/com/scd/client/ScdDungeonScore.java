@@ -140,11 +140,13 @@ public final class ScdDungeonScore {
 			int bonus,
 			boolean isEntrance,
 			int completedRooms,
+			int paddedCompletedRooms,
 			int totalRoomsEstimate,
 			double secretsPercent,
 			int crypts,
 			int deaths,
-			int incompletePuzzles) {
+			int incompletePuzzles,
+			boolean bloodDoorOpened) {
 	}
 
 	/** Fed every incoming SYSTEM message by ScdChatPacketMixin, unconditionally - tracks the handful of run events the formula needs that aren't visible on the scoreboard/tab list at all (deaths, mimic/prince/bat kills). */
@@ -214,7 +216,7 @@ public final class ScdDungeonScore {
 				: speed + explore + skill + bonus;
 
 		return new ScoreBreakdown(total, skill, explore, speed, bonus, isEntrance,
-				completedRooms, totalRooms, secretsPercent, crypts, deaths, incompletePuzzles);
+				completedRooms, paddedCompletedRooms, totalRooms, secretsPercent, crypts, deaths, incompletePuzzles, bloodDoorOpened);
 	}
 
 	private static int calculateSkill(int completedRooms, int totalRooms, int incompletePuzzles, int deaths) {
