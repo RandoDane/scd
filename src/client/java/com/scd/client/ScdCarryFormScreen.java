@@ -88,7 +88,7 @@ public class ScdCarryFormScreen extends Screen {
 		y += 20;
 
 		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16, Component.literal("Choose online player..."), ScdTheme.ACCENT_SLAYER, () ->
-				Minecraft.getInstance().setScreen(new ScdCarryPlayerPickerScreen(this, client))));
+				Minecraft.getInstance().setScreen(new ScdCarryPlayerPickerScreen(this, client, this::setPlayerName))));
 		y += 22;
 
 		typeRowY = y;

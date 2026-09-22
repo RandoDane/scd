@@ -6,12 +6,16 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Paged list of every player currently on the server (from the tab list),
- * for the "New Carry" form - picking a row fills the form's player name
+ * for a "New Carry" form - picking a row fills the form's player name
  * field with the exact-cased IGN instead of relying on typing it correctly,
- * same paging style as ScdSlayerDropsScreen/ScdCarryQueueScreen.
+ * same paging style as ScdSlayerDropsScreen/ScdCarryQueueScreen. Generalized
+ * 2026-09-23 (was Slayer-carry-specific, taking a concrete ScdCarryFormScreen)
+ * to a plain callback + back-target screen, so ScdDungeonCarryFormScreen can
+ * reuse it too - choosing an online player is identical either way.
  */
 public class ScdCarryPlayerPickerScreen extends Screen {
 	private static final int PANEL_WIDTH = 240;
@@ -19,7 +23,8 @@ public class ScdCarryPlayerPickerScreen extends Screen {
 	private static final int ROW_HEIGHT = 18;
 	private static final int ROWS_PER_PAGE = 8;
 
-	private final ScdCarryFormScreen formScreen;
+	private final Screen backTarget;
+	private final Consumer<String> onPicked;
 	private final ScdClient client;
 	private int page = 0;
 
@@ -27,10 +32,11 @@ public class ScdCarryPlayerPickerScreen extends Screen {
 	private int emptyLabelY = -1;
 	private int pageLabelY = -1;
 
-	public ScdCarryPlayerPickerScreen(ScdCarryFormScreen formScreen, ScdClient client) {
+	public ScdCarryPlayerPickerScreen(Screen backTarget, ScdClient client, Consumer<String> onPicked) {
 		super(Component.literal("SCD - Choose Player"));
-		this.formScreen = formScreen;
+		this.backTarget = backTarget;
 		this.client = client;
+		this.onPicked = onPicked;
 	}
 
 	@Override
@@ -57,8 +63,8 @@ public class ScdCarryPlayerPickerScreen extends Screen {
 			for (int i = from; i < to; i++) {
 				String name = names.get(i);
 				addRenderableWidget(new ScdButton(contentX, y, fieldWidth, ROW_HEIGHT - 2, Component.literal(name), ScdTheme.ACCENT_SLAYER, () -> {
-					formScreen.setPlayerName(name);
-					Minecraft.getInstance().setScreen(formScreen);
+					onPicked.accept(name);
+					Minecraft.getInstance().setScreen(backTarget);
 				}));
 				y += ROW_HEIGHT;
 			}
@@ -91,7 +97,7 @@ public class ScdCarryPlayerPickerScreen extends Screen {
 		}
 
 		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16, Component.literal("Cancel"), ScdTheme.ACCENT_SLAYER, () ->
-				Minecraft.getInstance().setScreen(formScreen)));
+				Minecraft.getInstance().setScreen(backTarget)));
 		y += 16;
 
 		panelHeight = y + PADDING - panelY;

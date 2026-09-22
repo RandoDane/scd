@@ -2,6 +2,8 @@ package com.scd.client;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -40,6 +42,13 @@ public final class ScdDungeonCompletion {
 	private static final Pattern DEATHS_LINE = Pattern.compile("Deaths:\\s*(\\d+)");
 	private static final Pattern SECRETS_LINE = Pattern.compile("Secrets Found:\\s*(\\d+)");
 	private static final Pattern FORMATTING_CODE = Pattern.compile("§.");
+	// SkyHanni's own confirmed pattern comment for Master Mode's floor line ("Master Mode The
+	// Catacombs - Floor V") shows the prefix comes before "Catacombs" on the same line - checked
+	// separately from FLOOR_LINE above since it needs to search the whole line, not just capture
+	// the numeral. Not yet confirmed against a real Master Mode completion by this project itself.
+	private static final Pattern MASTER_MODE_MARKER = Pattern.compile("Master Mode", Pattern.CASE_INSENSITIVE);
+	private static final Map<String, Integer> ROMAN_TO_ARABIC = Map.of(
+			"I", 1, "II", 2, "III", 3, "IV", 4, "V", 5, "VI", 6, "VII", 7);
 
 	private static boolean insideBlock = false;
 	private static final List<String> buffer = new ArrayList<>();
@@ -54,6 +63,8 @@ public final class ScdDungeonCompletion {
 
 	public record CompletionReport(
 			String floor,
+			String floorKey,
+			boolean masterMode,
 			Integer teamScore,
 			String scoreRank,
 			String boss,
@@ -104,6 +115,7 @@ public final class ScdDungeonCompletion {
 
 	private static CompletionReport parseBlock(List<String> lines) {
 		String floor = null;
+		boolean masterMode = false;
 		Integer teamScore = null;
 		String scoreRank = null;
 		String boss = null;
@@ -120,7 +132,10 @@ public final class ScdDungeonCompletion {
 
 		for (String line : lines) {
 			Matcher m;
-			if ((m = FLOOR_LINE.matcher(line)).find()) floor = m.group(1);
+			if ((m = FLOOR_LINE.matcher(line)).find()) {
+				floor = m.group(1);
+				if (MASTER_MODE_MARKER.matcher(line).find()) masterMode = true;
+			}
 			if ((m = SCORE_LINE.matcher(line)).find()) {
 				teamScore = parseInt(m.group(1));
 				scoreRank = m.group(2);
@@ -153,8 +168,18 @@ public final class ScdDungeonCompletion {
 		// or another mod's) ever also happens to use them.
 		if (boss == null) return null;
 
-		return new CompletionReport(floor, teamScore, scoreRank, boss, clearTime, cataExp, classExpClass, classExp,
-				damageClass, totalDamage, allyHealing, enemiesKilled, deaths, secretsFound);
+		String floorKey = normalizeFloorKey(floor, masterMode);
+
+		return new CompletionReport(floor, floorKey, masterMode, teamScore, scoreRank, boss, clearTime, cataExp,
+				classExpClass, classExp, damageClass, totalDamage, allyHealing, enemiesKilled, deaths, secretsFound);
+	}
+
+	/** Roman numeral ("VI") + Master Mode flag -> this project's canonical floor key ("F6"/"M6"), the same format ScdDungeonManager/ScdDungeonScore already use - lets a carry entry match a completion report without every consumer re-deriving this conversion itself. */
+	private static String normalizeFloorKey(String romanFloor, boolean masterMode) {
+		if (romanFloor == null) return null;
+		Integer arabic = ROMAN_TO_ARABIC.get(romanFloor.toUpperCase(Locale.ROOT));
+		if (arabic == null) return null;
+		return (masterMode ? "M" : "F") + arabic;
 	}
 
 	private static Integer parseInt(String s) {

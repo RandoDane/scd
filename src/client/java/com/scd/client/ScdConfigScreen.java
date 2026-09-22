@@ -124,6 +124,16 @@ public class ScdConfigScreen extends Screen {
 				}));
 		y += CATEGORY_CARD_HEIGHT + 4;
 
+		// --- Dungeon Carries (opens straight into the queue, same "not a settings drill-down"
+		// reasoning as Accessories above) ---
+		addRenderableWidget(new ScdCategoryCard(contentX, y, fieldWidth, CATEGORY_CARD_HEIGHT,
+				Component.literal("Dungeon Carries"), "Track dungeon runs sold for coins", ScdTheme.ACCENT_DUNGEON, () -> {
+					applyServerUrlFieldIfPresent();
+					config.save();
+					Minecraft.getInstance().setScreen(new ScdDungeonCarryQueueScreen(this, client));
+				}));
+		y += CATEGORY_CARD_HEIGHT + 4;
+
 		y += 6;
 		addRenderableWidget(new ScdButton(contentX, y, fieldWidth, 16, Component.literal("Close"), ScdTheme.ACCENT_BAZAAR, () -> {
 			applyServerUrlFieldIfPresent();

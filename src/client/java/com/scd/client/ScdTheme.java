@@ -82,6 +82,7 @@ public final class ScdTheme {
 	public static int ACCENT_BAZAAR = 0xFF5B8DEF;
 	public static int ACCENT_SLAYER = 0xFFEF5B5B;
 	public static int ACCENT_ACCESSORIES = 0xFFE8B84B;
+	public static int ACCENT_DUNGEON = 0xFF7B5BEF;
 
 	/** Multiplies each RGB channel of `base` by the matching channel of `tintColor` (0-255 scale) - the same math blitSprite's own argbTint does, reused here so panel()/card()'s literal fillGradient colors theme consistently with panelRounded()'s sprite tinting. Keeps base's own alpha untouched. */
 	private static int tint(int base, int tintColor) {
@@ -115,6 +116,7 @@ public final class ScdTheme {
 		ACCENT_BAZAAR = accent;
 		ACCENT_SLAYER = accent;
 		ACCENT_ACCESSORIES = accent;
+		ACCENT_DUNGEON = accent;
 
 		TEXT_SECONDARY = ScdColorSlot.resolve(theme.colors(), ScdSlayerColorSlot.BOSS_TEXT);
 		TEXT_MUTED = ScdColorSlot.resolve(theme.colors(), ScdSlayerColorSlot.STATS_LABEL);

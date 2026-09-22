@@ -52,6 +52,7 @@ public class ScdClient implements ClientModInitializer {
 	private ScdSlayerRngMeter slayerRngMeter;
 	private ScdSlayerDrops slayerDrops;
 	private ScdCarryQueue carryQueue;
+	private ScdDungeonCarryQueue dungeonCarryQueue;
 	private final ScdCarryBossWatcher carryBossWatcher = new ScdCarryBossWatcher(this::handleCarryBossKilled);
 	private final ScdInventoryWatcher inventoryWatcher = new ScdInventoryWatcher();
 	private final ScdAccessoryData accessoryData = new ScdAccessoryData();
@@ -141,6 +142,7 @@ public class ScdClient implements ClientModInitializer {
 		slayerMenuWatcher = new ScdSlayerMenuWatcher(slayerRngMeter);
 		slayerDrops = ScdSlayerDrops.load();
 		carryQueue = ScdCarryQueue.load();
+		dungeonCarryQueue = ScdDungeonCarryQueue.load();
 		slayerStatsHud = new ScdSlayerStatsHud(config, slayerSessionStats, slayerTracker, mayorPerks);
 		slayerHud = new ScdSlayerHud(config, slayerTracker, slayerRecords, slayerRngMeter, slayerDrops, slayerStatsHud);
 		slayerHud.register();
@@ -416,6 +418,10 @@ public class ScdClient implements ClientModInitializer {
 
 	public ScdCarryQueue carryQueue() {
 		return carryQueue;
+	}
+
+	public ScdDungeonCarryQueue dungeonCarryQueue() {
+		return dungeonCarryQueue;
 	}
 
 	// A real Minecraft/Hypixel account name is always 1-16 chars of [A-Za-z0-9_] - Hypixel's tab list
@@ -922,7 +928,40 @@ public class ScdClient implements ClientModInitializer {
 										.executes(ctx -> {
 											reportDungeonTabListDebug(ctx.getSource());
 											return 1;
-										}))));
+										})))
+						.then(ClientCommands.literal("carry")
+								.then(ClientCommands.literal("list")
+										.executes(ctx -> {
+											reportDungeonCarries(ctx.getSource());
+											return 1;
+										}))
+								.then(ClientCommands.literal("add")
+										.then(ClientCommands.argument("player", StringArgumentType.word())
+												.then(ClientCommands.argument("floor", StringArgumentType.word())
+														.then(ClientCommands.argument("pricePerRun", StringArgumentType.word())
+																.then(ClientCommands.argument("runCount", com.mojang.brigadier.arguments.LongArgumentType.longArg(1))
+																		.executes(ctx -> {
+																			addDungeonCarryCommand(ctx.getSource(),
+																					StringArgumentType.getString(ctx, "player"),
+																					StringArgumentType.getString(ctx, "floor"),
+																					StringArgumentType.getString(ctx, "pricePerRun"),
+																					com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "runCount"));
+																			return 1;
+																		})))))
+								.then(ClientCommands.literal("completeid")
+										.then(ClientCommands.argument("id", com.mojang.brigadier.arguments.LongArgumentType.longArg())
+												.executes(ctx -> {
+													completeDungeonCarryByIdCommand(ctx.getSource(), com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "id"));
+													return 1;
+												})))
+								.then(ClientCommands.literal("extendid")
+										.then(ClientCommands.argument("id", com.mojang.brigadier.arguments.LongArgumentType.longArg())
+												.then(ClientCommands.argument("amount", com.mojang.brigadier.arguments.LongArgumentType.longArg(1))
+														.executes(ctx -> {
+															extendDungeonCarryByIdCommand(ctx.getSource(), com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "id"),
+																	com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "amount"));
+															return 1;
+														})))))));
 
 		dispatcher.register(root);
 	}
@@ -1093,6 +1132,62 @@ public class ScdClient implements ClientModInitializer {
 			source.sendFeedback(Component.literal(line));
 			ScdLog.info("carry debug: " + line);
 		}
+	}
+
+	/** Full dungeon carry list for chat-only use - mirrors reportCarries. */
+	private void reportDungeonCarries(FabricClientCommandSource source) {
+		var entries = dungeonCarryQueue.all();
+		source.sendFeedback(Component.literal("=== Dungeon Carries (" + entries.size() + ") ==="));
+		if (entries.isEmpty()) {
+			source.sendFeedback(Component.literal("No dungeon carries yet."));
+			return;
+		}
+		for (var entry : entries) {
+			String progress = entry.isActive() ? entry.runsCompleted + "/" + entry.runsOwed : "done";
+			source.sendFeedback(Component.literal(entry.playerName + " - " + entry.floor + " (" + progress + ")"));
+		}
+	}
+
+	private static final java.util.List<String> DUNGEON_CARRY_FLOORS = java.util.List.of(
+			"F1", "F2", "F3", "F4", "F5", "F6", "F7", "M1", "M2", "M3", "M4", "M5", "M6", "M7");
+
+	private void addDungeonCarryCommand(FabricClientCommandSource source, String player, String floorText, String pricePerRunText, long runCount) {
+		String floor = floorText.toUpperCase(java.util.Locale.ROOT);
+		if (!DUNGEON_CARRY_FLOORS.contains(floor)) {
+			source.sendFeedback(Component.literal("Unknown floor \"" + floorText + "\" - try one of: " + String.join(", ", DUNGEON_CARRY_FLOORS)));
+			return;
+		}
+		Long pricePerRun = ScdFormat.parseCompactLong(pricePerRunText);
+		if (pricePerRun == null || pricePerRun <= 0) {
+			source.sendFeedback(Component.literal("Invalid price per run \"" + pricePerRunText + "\" - try a plain number or e.g. 1.3m, 800k."));
+			return;
+		}
+		ScdDungeonCarryEntry entry = dungeonCarryQueue.add(player, floor, pricePerRun, pricePerRun * runCount);
+		source.sendFeedback(Component.literal("Added dungeon carry for " + player + ": " + floor
+				+ ", " + entry.runsOwed + " runs for " + ScdFormat.coins(entry.totalAmount) + " coins."));
+	}
+
+	/** Backs the "Done" chat button in promptDungeonCarryTargetReached. */
+	private void completeDungeonCarryByIdCommand(FabricClientCommandSource source, long id) {
+		ScdDungeonCarryEntry entry = dungeonCarryQueue.findByIdOrNull(id);
+		if (entry == null || !entry.isActive()) {
+			source.sendFeedback(Component.literal("That dungeon carry is already finished or no longer exists."));
+			return;
+		}
+		finishDungeonCarryManually(entry);
+		source.sendFeedback(Component.literal("Marked dungeon carry for " + entry.playerName + " as finished."));
+	}
+
+	/** Backs the "+5"/"+10"/"Custom" chat buttons in promptDungeonCarryTargetReached. */
+	private void extendDungeonCarryByIdCommand(FabricClientCommandSource source, long id, long additionalRunCount) {
+		ScdDungeonCarryEntry entry = dungeonCarryQueue.findByIdOrNull(id);
+		if (entry == null) {
+			source.sendFeedback(Component.literal("That dungeon carry no longer exists."));
+			return;
+		}
+		dungeonCarryQueue.extend(id, additionalRunCount);
+		source.sendFeedback(Component.literal("Added " + additionalRunCount + " more " + entry.floor
+				+ " runs for " + entry.playerName + " (now " + entry.runsOwed + " total)."));
 	}
 
 	/**
@@ -1498,6 +1593,71 @@ public class ScdClient implements ClientModInitializer {
 		if (report.secretsFound() != null) sb.append(", ").append(report.secretsFound()).append(" secrets");
 		var player = Minecraft.getInstance().player;
 		if (player != null) player.sendSystemMessage(Component.literal(sb.toString()));
+
+		creditDungeonCarries(report);
+	}
+
+	// ScdDungeonCompletion fires twice per real completion (the early "EXTRA STATS" block, then
+	// the fuller "Floor Stats" block a second later - see its own doc comment) - both carry the
+	// same floor+boss+time, so this skips crediting a second time for what's really one run.
+	private String lastCreditedDungeonSignature;
+
+	/**
+	 * Credits every active dungeon carry entry for the just-completed floor - unlike Slayer
+	 * carries (one specific customer's own boss, watched independently of what the carrier is
+	 * doing), a dungeon carry is credited by the carrier's OWN run completing, since carrying a
+	 * dungeon means being in the same party/instance as the customer (see
+	 * ScdDungeonCarryEntry's doc comment). One completed run credits every matching active entry
+	 * at once - multiple customers carried together in the same party all get +1 run each.
+	 */
+	private void creditDungeonCarries(ScdDungeonCompletion.CompletionReport report) {
+		if (report.floorKey() == null) return;
+		String signature = report.floorKey() + "|" + report.boss() + "|" + report.clearTime();
+		if (signature.equals(lastCreditedDungeonSignature)) return;
+		lastCreditedDungeonSignature = signature;
+
+		List<ScdDungeonCarryEntry> matching = dungeonCarryQueue.activeMatching(report.floorKey());
+		if (matching.isEmpty()) return;
+
+		long runTimeMs = parseClearTimeMs(report.clearTime());
+		for (ScdDungeonCarryEntry entry : matching) {
+			boolean justReachedTarget = dungeonCarryQueue.creditRun(entry, runTimeMs);
+			sendPartyChat(entry.playerName + ": " + entry.runsCompleted + "/" + entry.runsOwed + " runs");
+			if (justReachedTarget) promptDungeonCarryTargetReached(entry);
+		}
+	}
+
+	/** Parses ScdDungeonCompletion's clear-time text ("04m 46s", or possibly just "42s") into milliseconds, for ScdDungeonCarryEntry's average-run-time tracking. */
+	private static long parseClearTimeMs(String clearTime) {
+		if (clearTime == null) return 0;
+		var m = java.util.regex.Pattern.compile("(?:(\\d+)m)?\\s*(\\d+)s").matcher(clearTime);
+		if (!m.find()) return 0;
+		int minutes = m.group(1) != null ? Integer.parseInt(m.group(1)) : 0;
+		int seconds = Integer.parseInt(m.group(2));
+		return (minutes * 60L + seconds) * 1000L;
+	}
+
+	/** Same clickable-chat-buttons pattern as promptCarryTargetReached, pointed at the dungeon carry command tree instead. */
+	private void promptDungeonCarryTargetReached(ScdDungeonCarryEntry entry) {
+		var player = Minecraft.getInstance().player;
+		if (player == null) return;
+
+		MutableComponent line = Component.literal("[SCD] " + entry.playerName + "'s " + entry.floor + " carry hit "
+				+ entry.runsCompleted + "/" + entry.runsOwed + "! ").withStyle(net.minecraft.ChatFormatting.AQUA);
+		line.append(chatButton("Done", "/scd dungeon carry completeid " + entry.id, true, "Close this carry and send the review message"));
+		line.append(Component.literal("  "));
+		line.append(chatButton("+5", "/scd dungeon carry extendid " + entry.id + " 5", true, "Add 5 more " + entry.floor + " runs at the same price"));
+		line.append(Component.literal("  "));
+		line.append(chatButton("+10", "/scd dungeon carry extendid " + entry.id + " 10", true, "Add 10 more " + entry.floor + " runs at the same price"));
+		line.append(Component.literal("  "));
+		line.append(chatButton("Custom", "/scd dungeon carry extendid " + entry.id + " ", false, "Fill the chat box to type a custom amount"));
+		player.sendSystemMessage(line);
+	}
+
+	/** Called from ScdDungeonCarryQueueScreen's "Done" button - mirrors finishCarryManually. */
+	public void finishDungeonCarryManually(ScdDungeonCarryEntry entry) {
+		dungeonCarryQueue.markComplete(entry.id);
+		sendPartyChat("gg " + entry.playerName + " Please leave a review in #reviews in the relevant Discord");
 	}
 
 	private void toggleDungeonMapping(FabricClientCommandSource source, boolean enabled) {
