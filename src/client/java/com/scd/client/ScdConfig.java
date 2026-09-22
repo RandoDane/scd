@@ -41,6 +41,7 @@ public class ScdConfig {
 	public Bazaar bazaar = new Bazaar();
 	public Slayer slayer = new Slayer();
 	public Accessories accessories = new Accessories();
+	public Dungeon dungeon = new Dungeon();
 
 	// Gates the diagnostic/debug commands (see ScdClient.registerCommands) behind /scd dev <code>, so
 	// the command list doesn't look bloated with internal-only tools when handed to someone who isn't
@@ -68,6 +69,15 @@ public class ScdConfig {
 		// not built yet as of this field's addition). Off by default like any new, not-yet-verified
 		// overlay - opt in once it exists rather than surprising anyone with an unfinished feature.
 		public boolean missingAccessoriesOverlayEnabled = false;
+	}
+
+	public static class Dungeon {
+		// Opt-in: sends anonymous room block-fingerprints (ScdDungeonRoomScanner) to the SCD backend
+		// to help build a crowd-sourced dungeon room database - see FEATURE_ROADMAP.md §3's "Dungeon
+		// mapping initiative". Off by default because the approach is still genuinely experimental
+		// (grid-anchor/room-boundary assumptions not yet live-confirmed), not for privacy reasons - a
+		// fingerprint is just block positions/ids relative to a room cell, nothing player-identifying.
+		public boolean roomMappingEnabled = false;
 	}
 
 	public static class Slayer {

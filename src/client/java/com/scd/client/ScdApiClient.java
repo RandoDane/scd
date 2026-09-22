@@ -246,6 +246,48 @@ public class ScdApiClient {
 				});
 	}
 
+	/**
+	 * Opt-in crowd-sourced room fingerprint report for the "Dungeon mapping initiative" (see
+	 * ScdDungeonRoomScanner and FEATURE_ROADMAP.md §3) - fire-and-forget, since this is a
+	 * background contribution, not a user-initiated action. Failures are logged, never surfaced
+	 * to the player.
+	 */
+	public void reportDungeonRoom(String floor, List<ScdDungeonRoomScanner.BlockSample> blocks) {
+		JsonObject body = new JsonObject();
+		body.addProperty("floor", floor);
+		JsonArray blocksJson = new JsonArray();
+		for (var b : blocks) {
+			JsonObject bo = new JsonObject();
+			bo.addProperty("x", b.relX());
+			bo.addProperty("y", b.y());
+			bo.addProperty("z", b.relZ());
+			bo.addProperty("id", b.blockId());
+			blocksJson.add(bo);
+		}
+		body.add("blocks", blocksJson);
+
+		HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/api/dungeon/rooms/report"))
+				.timeout(Duration.ofSeconds(10))
+				.header("Content-Type", "application/json")
+				.POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+				.build();
+
+		http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+				.thenAccept(res -> {
+					// A non-2xx (e.g. 404 while the backend hasn't been deployed with this route yet)
+					// completes the request normally at the network level - only checking the status
+					// code here catches that. Found live 2026-09-22: reports were silently "succeeding"
+					// against a server that didn't have the route yet, with zero log trace either way.
+					if (res.statusCode() != 200) {
+						ScdLog.warn("dungeon room report rejected: HTTP " + res.statusCode() + " " + res.body());
+					}
+				})
+				.exceptionally(err -> {
+					ScdLog.warn("dungeon room report failed to send: " + err.getMessage());
+					return null;
+				});
+	}
+
 	/** The server's error responses are {"error": "human message", "code": "..."} - falls back to a plain HTTP status if the body isn't that shape. */
 	private static String extractErrorMessage(String body, int statusCode) {
 		try {

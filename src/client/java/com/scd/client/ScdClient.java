@@ -55,6 +55,13 @@ public class ScdClient implements ClientModInitializer {
 	private final ScdInventoryWatcher inventoryWatcher = new ScdInventoryWatcher();
 	private final ScdAccessoryData accessoryData = new ScdAccessoryData();
 	private final ScdAccessoryBagWatcher accessoryBagWatcher = new ScdAccessoryBagWatcher();
+	private final ScdDungeonRoomScanner dungeonRoomScanner = new ScdDungeonRoomScanner();
+	// Armed via /scd dungeon debug capture - logs every chat/system message plus a periodic
+	// scoreboard snapshot to logs/latest.log while a real dungeon run happens, so the actual
+	// end-of-run summary text (and its trigger) can be captured and read back rather than guessed.
+	// See FEATURE_ROADMAP.md §3's "Dungeon run-completion signal - still open" note.
+	private boolean dungeonDebugCaptureActive = false;
+	private int dungeonDebugScoreboardTickCounter = 0;
 	// True only while the vanilla Accessory Bag screen has been open continuously since the last
 	// non-bag screen - tracked here rather than inferred from the watcher's own state, since Hypixel
 	// sends a genuinely new Screen instance per page (confirmed live: this AFTER_INIT block fires on
@@ -121,6 +128,7 @@ public class ScdClient implements ClientModInitializer {
 		config = ScdConfig.load();
 		ScdTheme.applyTheme(ScdHudTheme.byName(config.menuTheme));
 		api = new ScdApiClient(config.bazaar.serverUrl);
+		ScdDungeonCompletion.setListener(this::handleDungeonCompletion);
 		history = new ScdHistoryStore(api);
 		graphHud = new ScdGraphHud(config, prices, history, hoverState);
 		graphHud.register();
@@ -208,6 +216,8 @@ public class ScdClient implements ClientModInitializer {
 
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> ScdLog.guard("slayer tick", slayerTracker::tick));
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> ScdLog.guard("carry boss watch", () -> carryBossWatcher.tick(carryQueue.active())));
+		ClientTickEvents.END_CLIENT_TICK.register(mc -> ScdLog.guard("dungeon room scan", () -> dungeonRoomScanner.tick(api, config.dungeon.roomMappingEnabled)));
+		ClientTickEvents.END_CLIENT_TICK.register(mc -> ScdLog.guard("dungeon debug capture", this::tickDungeonDebugCapture));
 		// A HUD element that renders nothing, purely to piggyback ticking the inventory watcher onto
 		// HudElementRegistry rather than the shared ClientTickEvents.END_CLIENT_TICK above - see
 		// ScdSlayerHud.register() for why that event can go silent in a heavily modded environment.
@@ -224,7 +234,31 @@ public class ScdClient implements ClientModInitializer {
 			checkCocoonMessage(message);
 			checkSlayerCompletionMessages(message);
 			checkSackPickupMessage(message);
+			checkDungeonDebugCapture(message);
 		}));
+		// Dungeon end-of-run summary confirmed live 2026-09-22 to NOT come through GAME above at
+		// all - it only ever showed up under vanilla's own raw chat log, never under our
+		// "[DUNGEON-DEBUG] chat:" tag from the GAME hook. CHAT (the signed/player-attributed
+		// message event, which Fabric keeps separate from GAME's unsigned system messages) is the
+		// most likely real channel for it - registered here so the next capture run confirms or
+		// corrects that.
+		ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, senderEntry, indicator) ->
+				ScdLog.guard("dungeon chat watch", () -> checkDungeonDebugCapture(message, "CHAT")));
+		// A second real capture (also 2026-09-22) showed CHAT missed it too - the summary box isn't
+		// arriving through either normal "received" event. ALLOW_GAME/ALLOW_CHAT fire earlier, before
+		// another mod's own ALLOW handler gets a chance to cancel/suppress a message, so registering
+		// here (always returning true - purely observing, never blocking) rules in or out "Hypixel
+		// sent it and Skyblocker/SkyHanni is suppressing+replacing it" vs. "it's never a real network
+		// message at all, just rendered straight into chat by another mod's own code" - the latter
+		// would mean no Fabric chat event was ever going to see it, no matter which one we pick.
+		ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
+			ScdLog.guard("dungeon chat watch", () -> checkDungeonDebugCapture(message, "ALLOW_GAME"));
+			return true;
+		});
+		ClientReceiveMessageEvents.ALLOW_CHAT.register((message, signedMessage, sender, senderEntry, indicator) -> {
+			ScdLog.guard("dungeon chat watch", () -> checkDungeonDebugCapture(message, "ALLOW_CHAT"));
+			return true;
+		});
 		ScreenEvents.AFTER_INIT.register((mc, screen, width, height) -> {
 			// A screen's real content streams in after it opens, not at creation (Hypixel shows a
 			// "Waiting for item stacks to load..." placeholder first) - re-scanning every tick the
@@ -251,12 +285,20 @@ public class ScdClient implements ClientModInitializer {
 				if (!accessoryBagSessionOpen) {
 					accessoryBagWatcher.reset();
 					missingAccessoriesPage = 0;
+					// Re-fetch on every fresh visit, not just the first ever this session. This used to
+					// be gated on Status.IDLE, which only holds before the very first fetch - once that
+					// lands (LOADED or ERROR), nothing ever puts it back to IDLE, so every later bag-open
+					// just kept showing that same first result forever. Confirmed live 2026-09-22: the
+					// missing list got stuck and stopped updating at all after a bag-open that happened
+					// while in a dungeon (where several accessories show an inflated Magical Power in
+					// their lore from Hypixel's own dungeon-only stat boost) - the boost itself isn't a
+					// bug and doesn't affect the missing-list logic (that's name-matching only, see
+					// excludeLiveScanned), but this staleness bug meant whatever loaded first just never
+					// refreshed again regardless. refreshAccessories() already no-ops if a fetch is
+					// already in flight, so this is safe to call on every fresh visit.
+					refreshAccessories();
 				}
 				accessoryBagSessionOpen = true;
-				// The missing-accessories list comes from the backend (server/src/hypixelProfile.js),
-				// not this in-game scan - kick that fetch off here too so it's ready without the player
-				// needing to separately visit /scd's own Accessories screen first.
-				if (accessoryData.status() == ScdAccessoryData.Status.IDLE) refreshAccessories();
 				ScreenEvents.afterTick(screen).register(s -> ScdLog.guard("accessory bag watch", () -> accessoryBagWatcher.onScreenOpened(s)));
 				ScreenEvents.afterExtract(screen).register((s, graphics, mouseX, mouseY, partialTick) ->
 						ScdLog.guard("accessory bag overlay", () -> renderAccessoryBagOverlay(graphics, mouseX, mouseY, partialTick)));
@@ -831,7 +873,43 @@ public class ScdClient implements ClientModInitializer {
 								.executes(ctx -> {
 									reportCarryDebug(ctx.getSource());
 									return 1;
-								})));
+								})))
+				.then(ClientCommands.literal("dungeon")
+						// Opt-in toggle for the room-mapping data collector (ScdDungeonRoomScanner) -
+						// not dev-gated, since this is meant for any willing player to turn on, not
+						// just internal troubleshooting.
+						.then(ClientCommands.literal("mapping")
+								.then(ClientCommands.literal("on")
+										.executes(ctx -> {
+											toggleDungeonMapping(ctx.getSource(), true);
+											return 1;
+										}))
+								.then(ClientCommands.literal("off")
+										.executes(ctx -> {
+											toggleDungeonMapping(ctx.getSource(), false);
+											return 1;
+										})))
+						.then(ClientCommands.literal("debug")
+								.requires(source -> config.devUnlocked)
+								// Continuous capture: logs every chat/system message and a periodic
+								// scoreboard snapshot to logs/latest.log until toggled off - meant to be
+								// armed right before a real dungeon run so the actual end-of-run summary
+								// text (and whatever precedes it) gets captured verbatim.
+								.then(ClientCommands.literal("capture")
+										.executes(ctx -> {
+											toggleDungeonDebugCapture(ctx.getSource());
+											return 1;
+										}))
+								.then(ClientCommands.literal("scoreboard")
+										.executes(ctx -> {
+											reportDungeonScoreboardDebug(ctx.getSource());
+											return 1;
+										}))
+								.then(ClientCommands.literal("room")
+										.executes(ctx -> {
+											reportDungeonRoomDebug(ctx.getSource());
+											return 1;
+										}))));
 
 		dispatcher.register(root);
 	}
@@ -1384,6 +1462,104 @@ public class ScdClient implements ClientModInitializer {
 		for (String line : lines) {
 			ScdLog.info(line);
 		}
+	}
+
+	/**
+	 * Real consumer of ScdDungeonCompletion's parsed reports, registered in onInitializeClient -
+	 * fires twice per actual dungeon completion (the early "EXTRA STATS" block, then the fuller
+	 * "Floor N Stats" block a second later - see ScdDungeonCompletion's own doc comment). Just
+	 * logs + announces both for now, clearly labeled, so this is verifiable end-to-end without
+	 * reading raw logs - nothing downstream (Dungeon carries, §20; a real score/completion HUD)
+	 * consumes this yet, that's the next layer once this is confirmed solid across more than one
+	 * boss/floor.
+	 */
+	private void handleDungeonCompletion(ScdDungeonCompletion.CompletionReport report) {
+		ScdLog.info("[DUNGEON-COMPLETION] " + report);
+		StringBuilder sb = new StringBuilder("§b[SCD] §fDungeon complete: F")
+				.append(report.floor() != null ? report.floor() : "?")
+				.append(" - ").append(report.boss() != null ? report.boss() : "?");
+		if (report.clearTime() != null) sb.append(" in ").append(report.clearTime());
+		if (report.teamScore() != null) sb.append(" - Score ").append(report.teamScore());
+		if (report.scoreRank() != null) sb.append(" (").append(report.scoreRank()).append(")");
+		if (report.totalDamage() != null) sb.append(" - ").append(ScdFormat.compactCount(report.totalDamage())).append(" dmg");
+		if (report.secretsFound() != null) sb.append(", ").append(report.secretsFound()).append(" secrets");
+		var player = Minecraft.getInstance().player;
+		if (player != null) player.sendSystemMessage(Component.literal(sb.toString()));
+	}
+
+	private void toggleDungeonMapping(FabricClientCommandSource source, boolean enabled) {
+		config.dungeon.roomMappingEnabled = enabled;
+		config.save();
+		source.sendFeedback(Component.literal(enabled
+				? "Dungeon room mapping ON - opted in. Room block-fingerprints will be sent to the SCD backend while you're in a dungeon (see FEATURE_ROADMAP.md §3's mapping initiative - this is still experimental)."
+				: "Dungeon room mapping OFF."));
+	}
+
+	/**
+	 * Toggled by /scd dungeon debug capture - see the dungeonDebugCaptureActive field doc for what
+	 * this is for. Logs to logs/latest.log via ScdLog rather than chat, since a full run's worth of
+	 * messages would be far too much chat spam to read live.
+	 */
+	private void toggleDungeonDebugCapture(FabricClientCommandSource source) {
+		dungeonDebugCaptureActive = !dungeonDebugCaptureActive;
+		ScdRawChatCapture.active = dungeonDebugCaptureActive;
+		dungeonDebugScoreboardTickCounter = 0;
+		source.sendFeedback(Component.literal(dungeonDebugCaptureActive
+				? "Dungeon debug capture ON - go do a real dungeon run now. Every chat/system message plus a scoreboard snapshot every ~5s is being logged to logs/latest.log, tagged [DUNGEON-DEBUG]. Run this command again to stop, then send the log."
+				: "Dungeon debug capture OFF."));
+		ScdLog.info("[DUNGEON-DEBUG] capture " + (dungeonDebugCaptureActive ? "armed" : "disarmed"));
+	}
+
+	private void checkDungeonDebugCapture(Component message) {
+		checkDungeonDebugCapture(message, "GAME");
+	}
+
+	/**
+	 * channel is tagged in the log line so a future capture can tell which Fabric event actually
+	 * delivered a given message - needed after finding 2026-09-22 that the dungeon end-of-run
+	 * summary never came through GAME at all, only through raw vanilla chat, which is why CHAT got
+	 * registered as a second source (see the ClientReceiveMessageEvents.CHAT registration above).
+	 */
+	private void checkDungeonDebugCapture(Component message, String channel) {
+		if (!dungeonDebugCaptureActive) return;
+		String text = message.getString();
+		if (text.isBlank()) return;
+		ScdLog.info("[DUNGEON-DEBUG] chat(" + channel + "): " + text);
+	}
+
+	/** Runs every client tick - only does anything while capture is armed, throttled to roughly once per 5s so it doesn't flood the log every tick. */
+	private void tickDungeonDebugCapture() {
+		if (!dungeonDebugCaptureActive) return;
+		if (++dungeonDebugScoreboardTickCounter < 100) return;
+		dungeonDebugScoreboardTickCounter = 0;
+
+		ScdDungeonManager.DungeonState state = ScdDungeonManager.read();
+		ScdLog.info("[DUNGEON-DEBUG] --- scoreboard snapshot (inDungeon=" + state.inDungeon() + " floor=" + state.floor() + " liveScore=" + state.liveScore() + ") ---");
+		for (String line : ScdSlayerScoreboard.describeRaw()) {
+			ScdLog.info("[DUNGEON-DEBUG] " + line);
+		}
+	}
+
+	private void reportDungeonScoreboardDebug(FabricClientCommandSource source) {
+		List<String> lines = ScdSlayerScoreboard.describeRaw();
+		source.sendFeedback(Component.literal("=== Sidebar scoreboard (dungeon detection check) ==="));
+		for (String line : lines) {
+			source.sendFeedback(Component.literal(line));
+		}
+		ScdLog.info("=== /scd dungeon debug scoreboard ===");
+		for (String line : lines) {
+			ScdLog.info(line);
+		}
+	}
+
+	private void reportDungeonRoomDebug(FabricClientCommandSource source) {
+		ScdDungeonManager.DungeonState state = ScdDungeonManager.read();
+		String msg = "In dungeon: " + state.inDungeon() + ", floor: " + state.floor() + ", liveScore: " + state.liveScore()
+				+ " (only trustworthy once in the boss room, see ScdDungeonManager's doc comment)"
+				+ " | scanner: " + dungeonRoomScanner.debugState()
+				+ " | mapping enabled: " + config.dungeon.roomMappingEnabled;
+		source.sendFeedback(Component.literal(msg));
+		ScdLog.info("=== /scd dungeon debug room === " + msg);
 	}
 
 	/**

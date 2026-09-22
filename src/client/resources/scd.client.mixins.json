@@ -3,6 +3,7 @@
 	"minVersion": "0.8",
 	"package": "com.scd.client.mixin",
 	"mixins": [
-		"ScdEntityRendererMixin"
+		"ScdEntityRendererMixin",
+		"ScdChatPacketMixin"
 	]
 }
