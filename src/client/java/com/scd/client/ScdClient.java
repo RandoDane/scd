@@ -383,6 +383,10 @@ public class ScdClient implements ClientModInitializer {
 		return quiverHud;
 	}
 
+	public ScdDungeonScoreHud dungeonScoreHud() {
+		return dungeonScoreHud;
+	}
+
 	public ScdSlayerBossTracker slayerTracker() {
 		return slayerTracker;
 	}

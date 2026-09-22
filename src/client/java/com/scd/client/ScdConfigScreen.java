@@ -124,13 +124,14 @@ public class ScdConfigScreen extends Screen {
 				}));
 		y += CATEGORY_CARD_HEIGHT + 4;
 
-		// --- Dungeon Carries (opens straight into the queue, same "not a settings drill-down"
-		// reasoning as Accessories above) ---
+		// --- Dungeons (score HUD options, room mapping, and the Dungeon Carries entry point -
+		// consolidated here 2026-09-23, was a standalone "Dungeon Carries" card straight to the
+		// queue; moved to a real drill-down since there's now more than one thing to configure) ---
 		addRenderableWidget(new ScdCategoryCard(contentX, y, fieldWidth, CATEGORY_CARD_HEIGHT,
-				Component.literal("Dungeon Carries"), "Track dungeon runs sold for coins", ScdTheme.ACCENT_DUNGEON, () -> {
+				Component.literal("Dungeons"), "Score HUD, room mapping, dungeon carries", ScdTheme.ACCENT_DUNGEON, () -> {
 					applyServerUrlFieldIfPresent();
 					config.save();
-					Minecraft.getInstance().setScreen(new ScdDungeonCarryQueueScreen(this, client));
+					Minecraft.getInstance().setScreen(new ScdDungeonConfigScreen(this, config, client));
 				}));
 		y += CATEGORY_CARD_HEIGHT + 4;
 

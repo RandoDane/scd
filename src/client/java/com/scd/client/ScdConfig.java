@@ -84,6 +84,11 @@ public class ScdConfig {
 		// dungeon score HUD, so it needs to just be visible on the next run without an extra toggle.
 		public boolean scoreHudEnabled = true;
 		public Pos scoreHudPosition = new Pos(8, 200);
+		// Each non-title line of the score HUD is independently toggleable - see
+		// ScdDungeonScoreHud.renderContent for how these shrink the box when off.
+		public boolean scoreHudShowBreakdown = true;
+		public boolean scoreHudShowRoomsSecrets = true;
+		public boolean scoreHudShowCryptsDeathsPuzzles = true;
 	}
 
 	public static class Slayer {

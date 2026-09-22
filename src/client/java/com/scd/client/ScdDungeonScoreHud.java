@@ -7,6 +7,8 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -41,47 +43,54 @@ public class ScdDungeonScoreHud {
 		return renderContent(graphics, font, true);
 	}
 
+	/**
+	 * Every line past the title is individually toggleable (config.dungeon.scoreHud*) - built the
+	 * line list dynamically so the box only ever takes up as much room as what's actually enabled.
+	 * The title/total line itself isn't toggleable (matches every other HUD in this project - the
+	 * headline number is the one thing that's always shown when the box is on at all).
+	 */
 	private ScdOverlayBox.Bounds renderContent(GuiGraphicsExtractor graphics, Font font, boolean preview) {
 		ScdDungeonScore.ScoreBreakdown breakdown = preview ? null : ScdDungeonScore.computeOrNull(mayorPerks);
+		if (breakdown == null && !preview) return null;
 
-		String title;
-		String line2;
-		String line3;
-		String line4;
+		List<String> lines = new ArrayList<>();
 		if (breakdown != null) {
-			title = "Score: " + breakdown.total() + (breakdown.isEntrance() ? " (entrance x0.7)" : "");
-			line2 = "Skill " + breakdown.skill() + "  Explore " + breakdown.explore()
-					+ "  Speed " + breakdown.speed() + "  Bonus " + breakdown.bonus();
-			line3 = "Rooms " + breakdown.completedRooms() + "/" + breakdown.totalRoomsEstimate()
-					+ "  Secrets " + String.format(Locale.ROOT, "%.1f", breakdown.secretsPercent()) + "%";
-			line4 = "Crypts " + breakdown.crypts() + "  Deaths " + breakdown.deaths()
-					+ "  Puzzles failed " + breakdown.incompletePuzzles();
-		} else if (preview) {
-			title = "Score: 249";
-			line2 = "Skill 78  Explore 93  Speed 100  Bonus 8";
-			line3 = "Rooms 236/236  Secrets 100.0%";
-			line4 = "Crypts 4  Deaths 0  Puzzles failed 0";
+			lines.add("Score: " + breakdown.total() + (breakdown.isEntrance() ? " (entrance x0.7)" : ""));
+			if (config.dungeon.scoreHudShowBreakdown) {
+				lines.add("Skill " + breakdown.skill() + "  Explore " + breakdown.explore()
+						+ "  Speed " + breakdown.speed() + "  Bonus " + breakdown.bonus());
+			}
+			if (config.dungeon.scoreHudShowRoomsSecrets) {
+				lines.add("Rooms " + breakdown.completedRooms() + "/" + breakdown.totalRoomsEstimate()
+						+ "  Secrets " + String.format(Locale.ROOT, "%.1f", breakdown.secretsPercent()) + "%");
+			}
+			if (config.dungeon.scoreHudShowCryptsDeathsPuzzles) {
+				lines.add("Crypts " + breakdown.crypts() + "  Deaths " + breakdown.deaths()
+						+ "  Puzzles incomplete " + breakdown.incompletePuzzles());
+			}
 		} else {
-			return null;
+			lines.add("Score: 249");
+			if (config.dungeon.scoreHudShowBreakdown) lines.add("Skill 78  Explore 93  Speed 100  Bonus 8");
+			if (config.dungeon.scoreHudShowRoomsSecrets) lines.add("Rooms 236/236  Secrets 100.0%");
+			if (config.dungeon.scoreHudShowCryptsDeathsPuzzles) lines.add("Crypts 4  Deaths 0  Puzzles incomplete 0");
 		}
 
-		int textWidth = Math.max(font.width(title), Math.max(font.width(line2), Math.max(font.width(line3), font.width(line4))));
+		int textWidth = 0;
+		for (String line : lines) textWidth = Math.max(textWidth, font.width(line));
 		int width = Math.max(MIN_WIDTH, textWidth + PADDING * 2);
 
 		int x = config.dungeon.scoreHudPosition.x + PADDING;
 		int y = config.dungeon.scoreHudPosition.y + PADDING;
 		int lineHeight = font.lineHeight + 2;
 
-		int boxHeight = PADDING * 2 + lineHeight * 4;
+		int boxHeight = PADDING * 2 + lineHeight * lines.size();
 		graphics.fill(x - PADDING, y - PADDING, x - PADDING + width, y - PADDING + boxHeight, BG_COLOR);
 
-		graphics.text(font, Component.literal(title), x, y, TITLE_COLOR, true);
-		y += lineHeight;
-		graphics.text(font, Component.literal(line2), x, y, ScdTheme.TEXT_SECONDARY, true);
-		y += lineHeight;
-		graphics.text(font, Component.literal(line3), x, y, ScdTheme.TEXT_SECONDARY, true);
-		y += lineHeight;
-		graphics.text(font, Component.literal(line4), x, y, ScdTheme.TEXT_SECONDARY, true);
+		for (int i = 0; i < lines.size(); i++) {
+			int color = i == 0 ? TITLE_COLOR : ScdTheme.TEXT_SECONDARY;
+			graphics.text(font, Component.literal(lines.get(i)), x, y, color, true);
+			y += lineHeight;
+		}
 
 		return new ScdOverlayBox.Bounds(x - PADDING, config.dungeon.scoreHudPosition.y, width, boxHeight);
 	}
