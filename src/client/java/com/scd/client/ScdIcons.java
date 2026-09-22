@@ -30,7 +30,13 @@ public final class ScdIcons {
 			HashMultimap<String, Property> backing = HashMultimap.create();
 			backing.put("textures", new Property("textures", icon.skinValue(), icon.skinSignature()));
 			PropertyMap properties = new PropertyMap(backing);
-			GameProfile profile = new GameProfile(UUID.randomUUID(), "scd_icon", properties);
+			// A stable UUID derived from the skin data itself, not UUID.randomUUID() - this is called
+			// fresh every render frame for every visible icon, and a different random identity each
+			// frame meant the game's own skin-texture cache could never get a stable hit for the same
+			// accessory, resolving from scratch every frame instead - confirmed live 2026-09-22 as the
+			// cause of the missing-accessories grid's icons visibly flashing between different heads.
+			UUID stableId = UUID.nameUUIDFromBytes(icon.skinValue().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			GameProfile profile = new GameProfile(stableId, "scd_icon", properties);
 			ItemStack head = new ItemStack(Items.PLAYER_HEAD);
 			head.set(DataComponents.PROFILE, ResolvableProfile.createResolved(profile));
 			return head;
