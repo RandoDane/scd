@@ -33,7 +33,6 @@ public class ScdSlayerHud {
 	private static final int BAR_BG_COLOR = 0x60000000;
 	private static final int BAR_COLOR = 0xFFFF5555;
 	private static final int WARNING_COLOR = 0xFFFF8855;
-	private static final int INFO_COLOR = 0xFF55DDAA;
 	private static final int PADDING = 10;
 	private static final int BASE_PANEL_WIDTH = 210;
 	private static final int BAR_HEIGHT = 6;
@@ -230,7 +229,11 @@ public class ScdSlayerHud {
 			title = quest.type().displayName() + " Slayer" + (quest.tier() != null ? " " + quest.tier() : "");
 			line2 = "Spawning - Time: " + formatElapsed(tracker.huntElapsedMs()) + (tracker.isHuntPaused() ? " (paused)" : "");
 			extraLines = huntingInfoLines(quest);
-			extraLinesColor = INFO_COLOR;
+			// Was a hardcoded teal-green (INFO_COLOR) - confirmed live 2026-09-22 that it clashed badly
+			// against a non-Classic theme (called out as "ugly green"). Unlike WARNING_COLOR/BAR_COLOR
+			// (a real danger/health signal, kept fixed on purpose), this is just "something worth
+			// noticing", the same visual weight the accent color already carries everywhere else.
+			extraLinesColor = ScdTheme.ACCENT_SLAYER;
 		} else if (!preview && tracker.justEndedTypeOrNull() != null) {
 			// Brief confirmation flash right after a kill, same window as the config screen's status
 			// badge - otherwise the box just vanishes the instant the fight ends with no feedback.
