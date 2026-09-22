@@ -136,9 +136,10 @@ public class ScdConfigScreen extends Screen {
 
 	/**
 	 * A one-click global theme switcher, separate from the main panel (see the field-group comment
-	 * above). Applying a theme overwrites every HUD's color overrides at once - right now that's just
+	 * above). Applying a theme overwrites every HUD's color overrides at once (right now that's just
 	 * Slayer's, but any future HUD with its own ScdColorSlot enum using the same id convention picks
-	 * these presets up automatically the moment it gets a hudColors map (see ScdHudTheme's doc).
+	 * these presets up automatically the moment it gets a hudColors map - see ScdHudTheme's doc) AND
+	 * re-skins every /scd menu, including this one, via ScdTheme.applyTheme - see its own doc comment.
 	 */
 	private void initThemeBox() {
 		int rows = (int) Math.ceil(ScdHudTheme.PRESETS.size() / (double) THEME_BUTTONS_PER_ROW);
@@ -166,7 +167,15 @@ public class ScdConfigScreen extends Screen {
 	private void applyGlobalTheme(ScdHudTheme theme) {
 		config.slayer.hudColors.clear();
 		config.slayer.hudColors.putAll(theme.colors());
+		config.menuTheme = theme.name();
 		config.save();
+
+		ScdTheme.applyTheme(theme);
+		// Widgets already placed on THIS screen (including the theme buttons themselves) baked in
+		// the old ScdTheme.ACCENT_* at construction time, so they need an explicit rebuild to pick up
+		// the new one immediately - any other /scd screen opened after this point picks it up on its
+		// own, just by reading the now-updated ScdTheme fields at init/render time like it always does.
+		rebuildWidgets();
 	}
 
 	private int addToggle(int x, int width, int y, String label, int accentColor, boolean initial, java.util.function.Consumer<Boolean> onChange) {

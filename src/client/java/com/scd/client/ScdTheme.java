@@ -27,32 +27,100 @@ import java.util.Locale;
  * Widget colors are kept near-opaque rather than translucent: a translucent
  * widget stacked on top of an already-translucent panel compounds into a
  * washed-out, low-contrast look instead of reading as a crisp surface.
+ *
+ * Every color below (except SHADOW) is a mutable field, not a constant - see applyTheme(). Every
+ * /scd screen already draws exclusively through this class's own helpers (panel/card/label/etc.),
+ * so re-skinning here is what makes a picked theme apply everywhere at once, with no per-screen work.
  */
 public final class ScdTheme {
-	public static final int TEXT_PRIMARY = 0xFFF4F6FA;
-	public static final int TEXT_SECONDARY = 0xFFA7ADBB;
-	public static final int TEXT_MUTED = 0xFF6B7280;
+	// Classic/default palette - the values every field below started as, before theming existed.
+	// applyTheme() tints these rather than replacing the whole palette outright, so Classic (whose
+	// "background" tint is the multiply-identity 0xFFFFFFFF) reproduces this exact look, and every
+	// other theme's panels/cards stay proportioned the same way, just recolored.
+	private static final int BASE_PANEL_TOP = 0xF0181B24;
+	private static final int BASE_PANEL_BOTTOM = 0xF00F1117;
+	private static final int BASE_PANEL_BORDER = 0x30FFFFFF;
+	private static final int BASE_CARD_TOP = 0xFF2A303D;
+	private static final int BASE_CARD_BOTTOM = 0xFF1C212B;
+	private static final int BASE_CARD_HOVER_TOP = 0xFF343B4C;
+	private static final int BASE_CARD_HOVER_BOTTOM = 0xFF242A37;
+	private static final int BASE_DISABLED_TOP = 0xFF23262E;
+	private static final int BASE_DISABLED_BOTTOM = 0xFF17191F;
+	private static final int BASE_TRACK_OFF = 0xFF3A3F4B;
 
-	public static final int PANEL_TOP = 0xF0181B24;
-	public static final int PANEL_BOTTOM = 0xF00F1117;
-	public static final int PANEL_BORDER = 0x30FFFFFF;
+	// Not `final` any more - every field below is live-reassigned by applyTheme() whenever the
+	// player picks a theme from ScdConfigScreen's "Themes" box (see ScdConfig.menuTheme), which is
+	// what makes a theme apply to every /scd menu for free: they all already read these same shared
+	// fields through ScdTheme's own drawing helpers rather than hardcoding a color themselves.
+	public static int TEXT_PRIMARY = 0xFFF4F6FA;
+	public static int TEXT_SECONDARY = 0xFFA7ADBB;
+	public static int TEXT_MUTED = 0xFF6B7280;
 
-	public static final int CARD_TOP = 0xFF2A303D;
-	public static final int CARD_BOTTOM = 0xFF1C212B;
-	public static final int CARD_HOVER_TOP = 0xFF343B4C;
-	public static final int CARD_HOVER_BOTTOM = 0xFF242A37;
+	public static int PANEL_TOP = BASE_PANEL_TOP;
+	public static int PANEL_BOTTOM = BASE_PANEL_BOTTOM;
+	public static int PANEL_BORDER = BASE_PANEL_BORDER;
 
-	public static final int DISABLED_TOP = 0xFF23262E;
-	public static final int DISABLED_BOTTOM = 0xFF17191F;
+	public static int CARD_TOP = BASE_CARD_TOP;
+	public static int CARD_BOTTOM = BASE_CARD_BOTTOM;
+	public static int CARD_HOVER_TOP = BASE_CARD_HOVER_TOP;
+	public static int CARD_HOVER_BOTTOM = BASE_CARD_HOVER_BOTTOM;
 
+	public static int DISABLED_TOP = BASE_DISABLED_TOP;
+	public static int DISABLED_BOTTOM = BASE_DISABLED_BOTTOM;
+
+	// Pure translucent black - a shadow is a depth cue, not a color choice, so this is the one
+	// palette role that intentionally never themes.
 	public static final int SHADOW = 0x4D000000;
 
-	public static final int TRACK_OFF = 0xFF3A3F4B;
-	public static final int KNOB = 0xFFF4F6FA;
+	public static int TRACK_OFF = BASE_TRACK_OFF;
+	public static int KNOB = 0xFFF4F6FA;
 
-	public static final int ACCENT_BAZAAR = 0xFF5B8DEF;
-	public static final int ACCENT_SLAYER = 0xFFEF5B5B;
-	public static final int ACCENT_ACCESSORIES = 0xFFE8B84B;
+	// All three used to be fixed per-category identity colors (blue/red/gold). Since 2026-09-22 a
+	// theme overrides all of them to the same shared accent - see ScdHudTheme's doc comment for why
+	// (the user's own call: one accent per theme, everywhere, rather than keeping categories themed
+	// independently of the chosen theme).
+	public static int ACCENT_BAZAAR = 0xFF5B8DEF;
+	public static int ACCENT_SLAYER = 0xFFEF5B5B;
+	public static int ACCENT_ACCESSORIES = 0xFFE8B84B;
+
+	/** Multiplies each RGB channel of `base` by the matching channel of `tintColor` (0-255 scale) - the same math blitSprite's own argbTint does, reused here so panel()/card()'s literal fillGradient colors theme consistently with panelRounded()'s sprite tinting. Keeps base's own alpha untouched. */
+	private static int tint(int base, int tintColor) {
+		int a = (base >>> 24) & 0xFF;
+		int r = ((base >> 16) & 0xFF) * ((tintColor >> 16) & 0xFF) / 255;
+		int g = ((base >> 8) & 0xFF) * ((tintColor >> 8) & 0xFF) / 255;
+		int b = (base & 0xFF) * (tintColor & 0xFF) / 255;
+		return (a << 24) | (r << 16) | (g << 8) | b;
+	}
+
+	/**
+	 * Re-skins every /scd menu at once: called on startup (with whichever theme ScdConfig.menuTheme
+	 * names) and again immediately whenever the player picks a different one from ScdConfigScreen's
+	 * "Themes" box. Reuses the same 5-field ScdHudTheme model the Slayer HUD customizer already had -
+	 * see ScdHudTheme's doc comment for the field-to-role mapping.
+	 */
+	public static void applyTheme(ScdHudTheme theme) {
+		int bgTint = ScdColorSlot.resolve(theme.colors(), ScdSlayerColorSlot.BACKGROUND);
+		PANEL_TOP = tint(BASE_PANEL_TOP, bgTint);
+		PANEL_BOTTOM = tint(BASE_PANEL_BOTTOM, bgTint);
+		PANEL_BORDER = tint(BASE_PANEL_BORDER, bgTint);
+		CARD_TOP = tint(BASE_CARD_TOP, bgTint);
+		CARD_BOTTOM = tint(BASE_CARD_BOTTOM, bgTint);
+		CARD_HOVER_TOP = tint(BASE_CARD_HOVER_TOP, bgTint);
+		CARD_HOVER_BOTTOM = tint(BASE_CARD_HOVER_BOTTOM, bgTint);
+		DISABLED_TOP = tint(BASE_DISABLED_TOP, bgTint);
+		DISABLED_BOTTOM = tint(BASE_DISABLED_BOTTOM, bgTint);
+		TRACK_OFF = tint(BASE_TRACK_OFF, bgTint);
+
+		int accent = ScdColorSlot.resolve(theme.colors(), ScdSlayerColorSlot.BOSS_TITLE);
+		ACCENT_BAZAAR = accent;
+		ACCENT_SLAYER = accent;
+		ACCENT_ACCESSORIES = accent;
+
+		TEXT_SECONDARY = ScdColorSlot.resolve(theme.colors(), ScdSlayerColorSlot.BOSS_TEXT);
+		TEXT_MUTED = ScdColorSlot.resolve(theme.colors(), ScdSlayerColorSlot.STATS_LABEL);
+		TEXT_PRIMARY = ScdColorSlot.resolve(theme.colors(), ScdSlayerColorSlot.STATS_VALUE);
+		KNOB = TEXT_PRIMARY;
+	}
 
 	// Same rarity colors Hypixel itself uses on item tooltips/chat (standard Minecraft formatting
 	// colors underneath: white/green/blue/dark_purple/gold/light_purple/aqua) - so a rarity-tagged

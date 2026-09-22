@@ -91,6 +91,7 @@ public class ScdClient implements ClientModInitializer {
 		logStartupInfo();
 
 		config = ScdConfig.load();
+		ScdTheme.applyTheme(ScdHudTheme.byName(config.menuTheme));
 		api = new ScdApiClient(config.bazaar.serverUrl);
 		history = new ScdHistoryStore(api);
 		graphHud = new ScdGraphHud(config, prices, history, hoverState);

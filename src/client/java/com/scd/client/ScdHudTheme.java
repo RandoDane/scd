@@ -5,11 +5,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * A named bundle of color-slot overrides, applied in one click from ScdHudAppearanceScreen instead
- * of setting each hex value by hand. Keyed by the same slot id strings a HUD's ScdColorSlot enum
- * uses (background/bossTitle/bossText/statsLabel/statsValue for now, the ids ScdSlayerColorSlot
+ * A named bundle of color-slot overrides, applied in one click from ScdConfigScreen's "Themes" box
+ * instead of setting each hex value by hand. Keyed by the same slot id strings a HUD's ScdColorSlot
+ * enum uses (background/bossTitle/bossText/statsLabel/statsValue for now, the ids ScdSlayerColorSlot
  * defines) - a future HUD that reuses those same conceptual roles under the same ids picks up these
  * presets for free, no per-HUD theme data needed, just {@code colorOverrides.putAll(theme.colors())}.
+ *
+ * Since 2026-09-22 also the single source for every /scd menu's own palette (see
+ * ScdTheme.applyTheme) - bossTitle becomes the one shared accent color everywhere (replacing
+ * Bazaar/Slayer/Accessories' previously-distinct blue/red/gold), bossText/statsLabel/statsValue
+ * become the shared secondary/muted/primary text colors, and background tints every panel/card
+ * gradient. The selected theme's name is persisted at ScdConfig.menuTheme and reapplied at startup,
+ * so menus look themed from the moment the game opens, not just after visiting /scd.
  *
  * The five presets below follow established game-HUD color conventions rather than arbitrary picks:
  * - Classic: warm red for combat/danger feedback against neutral cool grays - the mod's original look.
@@ -33,6 +40,11 @@ public record ScdHudTheme(String name, Map<String, Integer> colors) {
 			theme("Arctic", 0xFFCFE8FF, 0xFF6FD3FF, 0xFFBFD9EC, 0xFF7996AD, 0xFFEAF6FF),
 			theme("Monochrome", 0xFFFFFFFF, 0xFFFFFFFF, 0xFFCBCBCB, 0xFF8A8A8A, 0xFFFFFFFF)
 	);
+
+	/** Looks up a preset by its exact name (as saved in ScdConfig.menuTheme) - falls back to the first preset (Classic) for an unrecognized/missing name rather than crashing, e.g. a config saved by a version with a since-renamed/removed theme. */
+	public static ScdHudTheme byName(String name) {
+		return PRESETS.stream().filter(t -> t.name().equals(name)).findFirst().orElse(PRESETS.get(0));
+	}
 
 	private static ScdHudTheme theme(String name, int background, int bossTitle, int bossText, int statsLabel, int statsValue) {
 		Map<String, Integer> colors = new LinkedHashMap<>();

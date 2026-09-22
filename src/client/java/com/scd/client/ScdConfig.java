@@ -47,6 +47,12 @@ public class ScdConfig {
 	// actively troubleshooting an issue.
 	public boolean devUnlocked = false;
 
+	// Which ScdHudTheme.PRESETS entry every /scd menu (and the Slayer HUD, via slayer.hudColors) is
+	// currently skinned with - set by ScdConfigScreen's "Themes" box. ScdClient.onInitializeClient
+	// applies this to ScdTheme's own mutable fields right after loading config, so menus look themed
+	// from the moment the game opens, not just after the player revisits /scd.
+	public String menuTheme = "Classic";
+
 	public static class Bazaar {
 		public String serverUrl = "http://localhost:3000";
 		public boolean tooltipEnabled = true;
