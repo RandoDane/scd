@@ -1616,14 +1616,25 @@ public class ScdClient implements ClientModInitializer {
 		if (signature.equals(lastCreditedDungeonSignature)) return;
 		lastCreditedDungeonSignature = signature;
 
+		// Second, more reliable reset trigger for ScdDungeonScore's per-run counters - see its own
+		// resetRunState() doc comment for why computeOrNull()'s wasInDungeon transition alone isn't
+		// enough (quick re-queuing doesn't reliably leave the dungeon area).
+		ScdDungeonScore.resetRunState();
+
 		List<ScdDungeonCarryEntry> matching = dungeonCarryQueue.activeMatching(report.floorKey());
 		if (matching.isEmpty()) return;
 
 		long runTimeMs = parseClearTimeMs(report.clearTime());
 		for (ScdDungeonCarryEntry entry : matching) {
 			boolean justReachedTarget = dungeonCarryQueue.creditRun(entry, runTimeMs);
-			sendPartyChat(entry.playerName + ": " + entry.runsCompleted + "/" + entry.runsOwed + " runs");
-			if (justReachedTarget) promptDungeonCarryTargetReached(entry);
+			// Crediting itself happens immediately (the queue screen reflects progress right away)
+			// but the party-chat message is delayed 1s - the moment a run completes, Hypixel floods
+			// chat with boss dialogue/blessing pickups/stash summaries/the completion report itself,
+			// and a progress ping sent in the middle of that burst is easy to miss.
+			scheduler.schedule(() -> Minecraft.getInstance().execute(() -> {
+				sendPartyChat(entry.playerName + ": " + entry.runsCompleted + "/" + entry.runsOwed + " runs");
+				if (justReachedTarget) promptDungeonCarryTargetReached(entry);
+			}), 1, TimeUnit.SECONDS);
 		}
 	}
 

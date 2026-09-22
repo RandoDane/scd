@@ -113,6 +113,25 @@ public final class ScdDungeonScore {
 	private ScdDungeonScore() {
 	}
 
+	/**
+	 * Resets every per-run counter (deaths, mimic/prince/bat, blood door) immediately on a real
+	 * dungeon completion - called from ScdClient.creditDungeonCarries. Added 2026-09-23 as a
+	 * second, more reliable reset trigger alongside computeOrNull()'s own wasInDungeon
+	 * false-to-true check: confirmed live that quick re-queuing ("Click HERE to re-queue") doesn't
+	 * reliably leave the dungeon area long enough for that transition to fire, which let
+	 * bloodDoorOpened (true from a floor that genuinely had one) bleed into the next run and
+	 * under-penalize its Skill/Explore score by skipping the "blood door not opened yet" padding
+	 * it should have gotten. A real run-completion firing is an unambiguous "whatever's next is a
+	 * new run" signal regardless of whether the area-transition check also caught it.
+	 */
+	public static void resetRunState() {
+		deaths = 0;
+		mimicKilled = false;
+		princeKilled = false;
+		batKilled = false;
+		bloodDoorOpened = false;
+	}
+
 	public record ScoreBreakdown(
 			int total,
 			int skill,
