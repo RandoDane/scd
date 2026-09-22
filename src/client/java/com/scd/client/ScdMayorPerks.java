@@ -20,6 +20,7 @@ public class ScdMayorPerks {
 
 	private volatile double slayerXpBoostPercent;
 	private volatile String sourceMayorName;
+	private volatile java.util.List<ScdApiClient.MayorPerk> activePerks = java.util.List.of();
 
 	public void update(ScdApiClient.MayorInfo info) {
 		double boost = 0;
@@ -32,6 +33,22 @@ public class ScdMayorPerks {
 		}
 		slayerXpBoostPercent = boost;
 		sourceMayorName = boost > 0 ? info.mayorName() : null;
+		activePerks = info.perks();
+	}
+
+	/**
+	 * True if any currently-active perk's name contains `nameFragment` (case-insensitive) - used
+	 * by ScdDungeonScore for Mayor Paul's "EZPZ" dungeon-score perk, generic rather than
+	 * hardcoding Paul specifically so it keeps working if EZPZ is ever granted via the minister
+	 * role instead, the same reasoning already applied to the Slayer XP boost above.
+	 */
+	public boolean hasPerkNamed(String nameFragment) {
+		for (var perk : activePerks) {
+			if (perk.name() != null && perk.name().toLowerCase(Locale.ROOT).contains(nameFragment.toLowerCase(Locale.ROOT))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Multiplier to apply to base Slayer XP - 1.25 for a +25% buff, 1.0 if none is currently active. */

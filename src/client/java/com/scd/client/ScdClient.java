@@ -909,6 +909,16 @@ public class ScdClient implements ClientModInitializer {
 										.executes(ctx -> {
 											reportDungeonRoomDebug(ctx.getSource());
 											return 1;
+										}))
+								.then(ClientCommands.literal("score")
+										.executes(ctx -> {
+											reportDungeonScoreDebug(ctx.getSource());
+											return 1;
+										}))
+								.then(ClientCommands.literal("tablist")
+										.executes(ctx -> {
+											reportDungeonTabListDebug(ctx.getSource());
+											return 1;
 										}))));
 
 		dispatcher.register(root);
@@ -1560,6 +1570,33 @@ public class ScdClient implements ClientModInitializer {
 				+ " | mapping enabled: " + config.dungeon.roomMappingEnabled;
 		source.sendFeedback(Component.literal(msg));
 		ScdLog.info("=== /scd dungeon debug room === " + msg);
+	}
+
+	/** Live sanity check for ScdDungeonScore - dumps the full breakdown so a real run can confirm the tab-list-derived numbers (completed rooms, secrets%, crypts, puzzles) actually look right before trusting the total. */
+	private void reportDungeonScoreDebug(FabricClientCommandSource source) {
+		ScdDungeonScore.ScoreBreakdown breakdown = ScdDungeonScore.computeOrNull(mayorPerks);
+		if (breakdown == null) {
+			source.sendFeedback(Component.literal("Not in a dungeon, or floor not recognized yet."));
+			return;
+		}
+		String msg = "Score: " + breakdown.total() + " (skill=" + breakdown.skill() + " explore=" + breakdown.explore()
+				+ " speed=" + breakdown.speed() + " bonus=" + breakdown.bonus() + (breakdown.isEntrance() ? ", entrance x0.7" : "") + ")"
+				+ " | rooms=" + breakdown.completedRooms() + "/" + breakdown.totalRoomsEstimate()
+				+ " secrets=" + breakdown.secretsPercent() + "% crypts=" + breakdown.crypts()
+				+ " deaths=" + breakdown.deaths() + " incompletePuzzles=" + breakdown.incompletePuzzles();
+		source.sendFeedback(Component.literal(msg));
+		ScdLog.info("=== /scd dungeon debug score === " + msg);
+	}
+
+	/** One-shot raw dump of the tab list (hold Tab), same style as reportSlayerScoreboard/reportDungeonScoreboardDebug - lets a real run confirm the exact text ScdDungeonManager.readTabList()/ScdDungeonScore are trying to pattern-match against, since this project has never read the tab list before now. */
+	private void reportDungeonTabListDebug(FabricClientCommandSource source) {
+		var lines = ScdDungeonManager.readTabList();
+		source.sendFeedback(Component.literal("=== Tab list (" + lines.size() + " entries) ==="));
+		ScdLog.info("=== /scd dungeon debug tablist ===");
+		for (String line : lines) {
+			source.sendFeedback(Component.literal("\"" + line + "\""));
+			ScdLog.info("\"" + line + "\"");
+		}
 	}
 
 	/**

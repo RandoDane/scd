@@ -1,6 +1,7 @@
 package com.scd.client.mixin;
 
 import com.scd.client.ScdDungeonCompletion;
+import com.scd.client.ScdDungeonScore;
 import com.scd.client.ScdRawChatCapture;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket;
@@ -46,6 +47,10 @@ public class ScdChatPacketMixin {
 		// arriving as SYSTEM messages - fed unconditionally, not gated behind the debug capture
 		// toggle, since this is the real feature the mixin exists for.
 		ScdDungeonCompletion.onSystemMessage(text);
+		// Deaths/mimic/prince/bat kill messages (ScdDungeonScore) are also SYSTEM messages per
+		// Skyblocker's own real source (its equivalent checks run inside its ALLOW_GAME handler,
+		// the same channel as the T2/T3!/boss-dialogue lines already confirmed live for us here).
+		ScdDungeonScore.onSystemMessage(text);
 	}
 
 	@Inject(method = "handleDisguisedChat", at = @At("HEAD"))
