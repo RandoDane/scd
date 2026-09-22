@@ -40,7 +40,10 @@ public class ScdButton extends AbstractWidget {
 		int top = isActive() ? (hovered ? ScdTheme.CARD_HOVER_TOP : ScdTheme.CARD_TOP) : ScdTheme.DISABLED_TOP;
 		int bottom = isActive() ? (hovered ? ScdTheme.CARD_HOVER_BOTTOM : ScdTheme.CARD_BOTTOM) : ScdTheme.DISABLED_BOTTOM;
 		g.fillGradient(x, y, x + w, y + h, top, bottom);
-		g.outline(x, y, w, h, hovered ? accentColor : ScdTheme.PANEL_BORDER);
+		// Always the accent color (not just on hover) - a button that only shows its theme on hover
+		// reads as "not themed" the rest of the time, especially next to ScdCategoryCard's always-on
+		// accent-colored left bar. Hover is still distinct via the brighter fill above.
+		g.outline(x, y, w, h, isActive() ? accentColor : ScdTheme.PANEL_BORDER);
 
 		var font = Minecraft.getInstance().font;
 		int textColor = isActive() ? ScdTheme.TEXT_PRIMARY : ScdTheme.TEXT_MUTED;

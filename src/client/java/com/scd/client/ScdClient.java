@@ -1043,7 +1043,7 @@ public class ScdClient implements ClientModInitializer {
 		int height = 52 + contentLines * (lineH + 4) + (showNav ? 26 : 0);
 
 		ScdTheme.panel(g, x, y, width, height);
-		ScdTheme.label(g, font, "Accessory Scan", x + 10, y + 10, ScdTheme.TEXT_PRIMARY);
+		ScdTheme.label(g, font, "Accessory Helper", x + 10, y + 10, ScdTheme.TEXT_PRIMARY);
 		ScdTheme.divider(g, x + 10, y + 22, width - 20);
 
 		int ty = y + 30;
